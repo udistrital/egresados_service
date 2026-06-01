@@ -1,0 +1,19 @@
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: test
+    image: golang:1.22
+    commands:
+      - go test ./...
+
+  - name: build
+    image: golang:1.22
+    commands:
+      - CGO_ENABLED=0 GOOS=linux go build -o app .
+
+trigger:
+  branch:
+    - develop
+    - master
