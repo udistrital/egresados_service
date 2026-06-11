@@ -1,21 +1,14 @@
 package services
 
-import "github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+// Los catálogos del módulo viven en el servicio institucional de parámetros (C-1);
+// el CRUD local ya no los expone.
 
-// GetCategoriasBeneficio retorna todas las categorías de beneficio activas.
+// GetCategoriasBeneficio retorna las categorías de beneficio activas (tipo CATEGORIA_BENEFICIO).
 func GetCategoriasBeneficio() (interface{}, error) {
-	var result interface{}
-	if err := helpers.GetCRUD("/categoria_beneficio", &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return GetParametrosPorTipo(TipoParamCategoriaBeneficio)
 }
 
-// GetSectoresEconomicos retorna todos los sectores económicos activos.
+// GetSectoresEconomicos retorna los sectores económicos activos (tipo SECTOR_ECONOMICO).
 func GetSectoresEconomicos() (interface{}, error) {
-	var result interface{}
-	if err := helpers.GetCRUD("/sector_economico", &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return GetParametrosPorTipo(TipoParamSectorEconomico)
 }

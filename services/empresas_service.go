@@ -17,18 +17,13 @@ func RegistrarEmpresa(body map[string]interface{}) (interface{}, error) {
 		}
 	}
 
-	// Empresa autenticada vía Ágora → queda APROBADA directamente
-	estadoId, err := resolverIdEstadoEmpresa("APROBADA")
+	// Empresa autenticada vía Ágora → queda APROBADA directamente.
+	// estado_empresa_id y sector_economico_id son ids de parámetro planos (C-1).
+	estadoId, err := ResolverParametroId(TipoParamEstadoEmpresa, "APROBADA")
 	if err != nil {
 		return nil, err
 	}
-	body["estado_empresa"] = map[string]interface{}{"id": estadoId}
-
-	// Transformar sector_economico_id al formato objeto que espera el CRUD
-	if sid, ok := body["sector_economico_id"]; ok && sid != nil {
-		body["sector_economico"] = map[string]interface{}{"id": toInt(sid)}
-		delete(body, "sector_economico_id")
-	}
+	body["estado_empresa_id"] = estadoId
 
 	var result interface{}
 	if err := helpers.PostCRUD("/empresa", body, &result); err != nil {
@@ -41,7 +36,7 @@ func RegistrarEmpresa(body map[string]interface{}) (interface{}, error) {
 // Solo expone campos mínimos del egresado (RNF-002b / Ley 1581).
 func GetBandejaEmpresa(empresaId int) (interface{}, error) {
 	var solicitudes []map[string]interface{}
-	query := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Empresa.Id:%d,Activo:true", empresaId)
+	query := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&limit=0", empresaId)
 	if err := helpers.GetCRUD(query, &solicitudes); err != nil {
 		return nil, err
 	}
@@ -50,10 +45,14 @@ func GetBandejaEmpresa(empresaId int) (interface{}, error) {
 	var bandeja []map[string]interface{}
 	for _, s := range solicitudes {
 		item := map[string]interface{}{
-			"id":               s["id"],
-			"radicado":         s["radicado"],
-			"estado_solicitud": s["estado_solicitud"],
-			"fecha_solicitud":  s["fecha_solicitud"],
+			"id":              s["id"],
+			"radicado":        s["radicado"],
+			"fecha_solicitud": s["fecha_solicitud"],
+		}
+		// C-4b: el estado vigente se deriva del historial, no de la solicitud
+		if codigo, estadoId, err := getEstadoActual(toInt(s["id"])); err == nil {
+			item["estado_solicitud_id"] = estadoId
+			item["estado_solicitud"] = codigo
 		}
 		// Del egresado solo exponer nombre y código institucional, nunca teléfono ni programa completo
 		if egresado, ok := s["egresado"].(map[string]interface{}); ok {
@@ -77,7 +76,7 @@ func GetBandejaEmpresa(empresaId int) (interface{}, error) {
 
 // SuspenderEmpresa cambia el estado de la empresa a SUSPENDIDA.
 func SuspenderEmpresa(id int) error {
-	estadoId, err := resolverIdEstadoEmpresa("SUSPENDIDA")
+	estadoId, err := ResolverParametroId(TipoParamEstadoEmpresa, "SUSPENDIDA")
 	if err != nil {
 		return err
 	}
@@ -85,22 +84,8 @@ func SuspenderEmpresa(id int) error {
 	if err != nil {
 		return err
 	}
-	empresa["estado_empresa"] = map[string]interface{}{"id": estadoId}
+	empresa["estado_empresa_id"] = estadoId
 	return helpers.PutCRUD(fmt.Sprintf("/empresa/%d", id), empresa)
-}
-
-// resolverIdEstadoEmpresa obtiene el id del estado por su codigo_abreviacion.
-func resolverIdEstadoEmpresa(codigo string) (int, error) {
-	var estados []map[string]interface{}
-	if err := helpers.GetCRUD("/estado_empresa", &estados); err != nil {
-		return 0, fmt.Errorf("no se pudo obtener estados de empresa")
-	}
-	for _, e := range estados {
-		if e["codigo_abreviacion"] == codigo {
-			return toInt(e["id"]), nil
-		}
-	}
-	return 0, fmt.Errorf("estado %s no encontrado", codigo)
 }
 
 // getEmpresaBase obtiene la empresa del CRUD lista para ser actualizada.
@@ -109,12 +94,9 @@ func getEmpresaBase(id int) (map[string]interface{}, error) {
 	if err := helpers.GetCRUD(fmt.Sprintf("/empresa/%d", id), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa %d no encontrada", id)
 	}
-	// Normalizar relaciones a formato {id} para el PUT
-	if ee, ok := empresa["estado_empresa"].(map[string]interface{}); ok {
-		empresa["estado_empresa"] = map[string]interface{}{"id": toInt(ee["id"])}
-	}
-	if se, ok := empresa["sector_economico"].(map[string]interface{}); ok {
-		empresa["sector_economico"] = map[string]interface{}{"id": toInt(se["id"])}
+	// Normalizar la relación restante a formato {id} para el PUT
+	if ua, ok := empresa["usuario_aprobador"].(map[string]interface{}); ok {
+		empresa["usuario_aprobador"] = map[string]interface{}{"id": toInt(ua["id"])}
 	}
 	return empresa, nil
 }

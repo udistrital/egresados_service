@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	crudURL  = getEnv("BENEFICIOS_EGRESADOS_MID_CRUD_URL", "http://localhost:8080/v1")
-	authURL  = getEnv("BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1")
+	crudURL       = getEnv("BENEFICIOS_EGRESADOS_MID_CRUD_URL", "http://localhost:8080/v1")
+	authURL       = getEnv("BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1")
+	parametrosURL = getEnv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1")
 )
 
 func getEnv(key, fallback string) string {
@@ -31,6 +32,14 @@ func GetCRUD(path string, dest interface{}) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("CRUD respondió %d: %s", resp.StatusCode, string(body))
+	}
+	// Los GetAll del CRUD responden [{}] cuando la lista está vacía (idioma de los
+	// *_crud del SGA); normalizar para no inyectar un elemento zero-value en dest.
+	if strings.TrimSpace(string(body)) == "[{}]" {
+		body = []byte("[]")
 	}
 	return json.Unmarshal(body, dest)
 }
@@ -86,3 +95,18 @@ func PutCRUD(path string, payload interface{}) error {
 
 // AuthURL devuelve la URL base del servicio de autenticación.
 func AuthURL() string { return authURL }
+
+// GetParametros realiza un GET al servicio institucional de parámetros y
+// decodifica la respuesta estándar { Success, Status, Message, Data } en dest.
+func GetParametros(path string, dest interface{}) error {
+	resp, err := http.Get(fmt.Sprintf("%s%s", parametrosURL, path))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, dest)
+}

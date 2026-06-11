@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
 )
@@ -10,21 +12,28 @@ import (
 // GetCatalogoBeneficios devuelve el catálogo paginado con filtros (RN-008, RN-FILTROS).
 // Solo beneficios con estado=PUBLICADO, fecha_fin >= hoy, cupos_disponibles > 0.
 func GetCatalogoBeneficios(page, limit, categoriaId, empresaId int, q string) (interface{}, error) {
+	// El estado ya no es FK local: se filtra por el id del parámetro PUBLICADO (C-1)
+	publicadoId, err := ResolverParametroId(TipoParamEstadoBeneficio, "PUBLICADO")
+	if err != nil {
+		return nil, err
+	}
+
 	// Construir query string para el CRUD
 	offset := (page - 1) * limit
-	query := fmt.Sprintf(
-		"/beneficio?query=EstadoBeneficio.CodigoAbreviacion:PUBLICADO,Activo:true&limit=%d&offset=%d",
-		limit, offset,
-	)
+	filtros := fmt.Sprintf("EstadoBeneficioId:%d,Activo:true", publicadoId)
 	if categoriaId > 0 {
-		query += fmt.Sprintf(",CategoriaBeneficio.Id:%d", categoriaId)
+		filtros += fmt.Sprintf(",CategoriaBeneficioId:%d", categoriaId)
 	}
 	if empresaId > 0 {
-		query += fmt.Sprintf(",Empresa.Id:%d", empresaId)
+		filtros += fmt.Sprintf(",Empresa.Id:%d", empresaId)
 	}
-	// Nota: el filtro por fecha_fin >= hoy y cupos_disponibles > 0
-	// se aplica en el CRUD con query params o se filtra aquí tras obtener los datos.
-	// TODO: validar si el CRUD soporta operadores de comparación en query params.
+	if q != "" {
+		filtros += ",Titulo__icontains:" + url.QueryEscape(q)
+	}
+	// fecha_fin >= hoy y cupos_disponibles > 0 (RN-008): operadores nativos del ORM
+	filtros += ",FechaFin__gte:" + time.Now().Format("2006-01-02")
+	filtros += ",CuposDisponibles__gt:0"
+	query := fmt.Sprintf("/beneficio?query=%s&limit=%d&offset=%d", filtros, limit, offset)
 
 	var result interface{}
 	if err := helpers.GetCRUD(query, &result); err != nil {
@@ -53,31 +62,30 @@ func PublicarBeneficio(empresaId int, body map[string]interface{}) (interface{},
 		}
 	}
 
-	// Verificar que la empresa esté APROBADA
+	// Verificar que la empresa esté APROBADA (estado_empresa_id → parámetro)
 	var empresa map[string]interface{}
 	if err := helpers.GetCRUD(fmt.Sprintf("/empresa/%d", empresaId), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa no encontrada")
 	}
-	if estado, ok := empresa["estado_empresa"].(map[string]interface{}); ok {
-		if estado["codigo_abreviacion"] != "APROBADA" {
-			return nil, fmt.Errorf("la empresa debe estar APROBADA para publicar beneficios")
-		}
+	aprobadaId, err := ResolverParametroId(TipoParamEstadoEmpresa, "APROBADA")
+	if err != nil {
+		return nil, err
+	}
+	if toInt(empresa["estado_empresa_id"]) != aprobadaId {
+		return nil, fmt.Errorf("la empresa debe estar APROBADA para publicar beneficios")
 	}
 
-	// Resolver id del estado PUBLICADO
-	estadoId, err := resolverIdEstadoBeneficio("PUBLICADO")
+	// Resolver id del estado PUBLICADO (servicio de parámetros, C-1)
+	estadoId, err := ResolverParametroId(TipoParamEstadoBeneficio, "PUBLICADO")
 	if err != nil {
 		return nil, err
 	}
 
-	// Transformar relaciones al formato objeto que espera el CRUD
+	// empresa y usuario_creador siguen siendo relaciones del CRUD (formato objeto);
+	// categoría y estado son ids de parámetro planos
 	body["empresa"] = map[string]interface{}{"id": empresaId}
 	delete(body, "empresa_id")
-	body["estado_beneficio"] = map[string]interface{}{"id": estadoId}
-	if cid, ok := body["categoria_beneficio_id"]; ok {
-		body["categoria_beneficio"] = map[string]interface{}{"id": toInt(cid)}
-		delete(body, "categoria_beneficio_id")
-	}
+	body["estado_beneficio_id"] = estadoId
 	if uid, ok := body["usuario_creador_id"]; ok {
 		body["usuario_creador"] = map[string]interface{}{"id": toInt(uid)}
 		delete(body, "usuario_creador_id")
@@ -99,21 +107,6 @@ func PublicarBeneficio(empresaId int, body map[string]interface{}) (interface{},
 	}
 	return result, nil
 }
-
-// resolverIdEstadoBeneficio obtiene el id del estado de beneficio por codigo_abreviacion.
-func resolverIdEstadoBeneficio(codigo string) (int, error) {
-	var estados []map[string]interface{}
-	if err := helpers.GetCRUD("/estado_beneficio", &estados); err != nil {
-		return 0, fmt.Errorf("no se pudo obtener estados de beneficio")
-	}
-	for _, e := range estados {
-		if e["codigo_abreviacion"] == codigo {
-			return toInt(e["id"]), nil
-		}
-	}
-	return 0, fmt.Errorf("estado %s no encontrado", codigo)
-}
-
 
 // EditarBeneficio edita un beneficio existente (solo BORRADOR o PUBLICADO sin solicitudes activas).
 func EditarBeneficio(id int, body map[string]interface{}) error {

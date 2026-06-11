@@ -9,18 +9,18 @@ import (
 )
 
 const (
-	estadoPendiente     = "PENDIENTE"
-	estadoEnRevision    = "EN_REVISION"
-	estadoRequiereInfo  = "REQUIERE_INFO"
-	estadoAprobada      = "APROBADA"
-	estadoRechazada     = "RECHAZADA"
-	estadoCancelada     = "CANCELADA"
+	estadoPendiente    = "PENDIENTE"
+	estadoEnRevision   = "EN_REVISION"
+	estadoRequiereInfo = "REQUIERE_INFO"
+	estadoAprobada     = "APROBADA"
+	estadoRechazada    = "RECHAZADA"
+	estadoCancelada    = "CANCELADA"
 )
 
 // CrearSolicitud crea una solicitud validando todas las reglas de negocio:
 // RN-007 (solicitud única por egresado+beneficio), RN-010 (límite activas),
 // RN-002b (decremento atómico de cupo), RN-RADICADO (generación de radicado),
-// RN-004 (inserción de historial).
+// RN-004 (inserción de historial — única fuente de estado, C-4b).
 func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 	egresadoId, ok := body["egresado_id"]
 	if !ok {
@@ -48,24 +48,26 @@ func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 	// RN-002b: decrementar cupo_disponible atómicamente
 	// TODO: implementar con SELECT FOR UPDATE en el CRUD o usando endpoint dedicado
 
-	// RN-RADICADO: generar radicado BNF-YYYY-NNNNNN
+	// RN-RADICADO: generar radicado BNF-YYYY-NNNNNN con la secuencia del CRUD
 	anio := time.Now().Year()
 	var seqResp map[string]interface{}
 	if err := helpers.PostCRUD(
 		fmt.Sprintf("/secuencia_radicado/siguiente/%d", anio),
 		nil, &seqResp,
 	); err != nil {
-		// Fallback: usar timestamp (reemplazar por implementación real)
-		_ = err
+		return nil, fmt.Errorf("no se pudo generar el radicado: %v", err)
 	}
-	radicado := fmt.Sprintf("BNF-%d-%06d", anio, 1) // TODO: usar número de seqResp
+	numero := toInt(seqResp["numero"])
+	if numero == 0 {
+		return nil, fmt.Errorf("la secuencia de radicado no retornó número válido")
+	}
+	radicado := fmt.Sprintf("BNF-%d-%06d", anio, numero)
 
-	// Construir payload para el CRUD
+	// La solicitud ya no lleva estado propio (C-4b); el estado nace en el historial.
 	solicitud := map[string]interface{}{
-		"egresado_id":      eid,
-		"beneficio_id":     bid,
-		"radicado":         radicado,
-		"estado_solicitud": map[string]interface{}{"codigo_abreviacion": estadoPendiente},
+		"egresado":  map[string]interface{}{"id": eid},
+		"beneficio": map[string]interface{}{"id": bid},
+		"radicado":  radicado,
 	}
 	if datos, ok := body["datos_complementarios"]; ok {
 		solicitud["datos_complementarios"] = datos
@@ -76,41 +78,54 @@ func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	// RN-004: registrar historial de estado
-	solicitudId := toInt(result["id"])
-	historial := map[string]interface{}{
-		"solicitud_beneficio_id": solicitudId,
-		"estado_nuevo":           map[string]interface{}{"codigo_abreviacion": estadoPendiente},
-		"usuario_id":             eid, // el egresado como actor
+	// RN-004 / C-4b: el registro inicial del historial define el estado PENDIENTE
+	pendienteId, err := ResolverParametroId(TipoParamEstadoSolicitud, estadoPendiente)
+	if err != nil {
+		return nil, err
 	}
-	if err := helpers.PostCRUD("/historial_estado_solicitud", historial, &map[string]interface{}{}); err != nil {
-		// No bloquear la creación si el historial falla, pero loguear
-		fmt.Printf("advertencia: no se pudo registrar historial: %v\n", err)
+	solicitudId := toInt(result["id"])
+	usuarioId := eid // el egresado como actor
+	if uid, ok := body["usuario_id"]; ok {
+		usuarioId = toInt(uid)
+	}
+	historial := map[string]interface{}{
+		"solicitud_beneficio": map[string]interface{}{"id": solicitudId},
+		"estado_nuevo_id":     pendienteId,
+		"usuario":             map[string]interface{}{"id": usuarioId},
+	}
+	if err := helpers.PostCRUD("/historial_solicitud", historial, &map[string]interface{}{}); err != nil {
+		// Sin historial la solicitud queda sin estado: es un error real, no advertencia
+		return nil, fmt.Errorf("solicitud %d creada pero no se pudo registrar su estado inicial: %v", solicitudId, err)
 	}
 
 	return result, nil
 }
 
-// GetSolicitudesByEgresado retorna las solicitudes de un egresado con estado e historial.
+// GetSolicitudesByEgresado retorna las solicitudes de un egresado con su estado
+// vigente derivado del historial (C-4b).
 func GetSolicitudesByEgresado(egresadoId int) (interface{}, error) {
-	var result interface{}
-	query := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true", egresadoId)
-	if err := helpers.GetCRUD(query, &result); err != nil {
+	var solicitudes []map[string]interface{}
+	query := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	if err := helpers.GetCRUD(query, &solicitudes); err != nil {
 		return nil, err
 	}
-	return result, nil
+	for _, s := range solicitudes {
+		if codigo, estadoId, err := getEstadoActual(toInt(s["id"])); err == nil {
+			s["estado_solicitud_id"] = estadoId
+			s["estado_solicitud"] = codigo
+		}
+	}
+	return solicitudes, nil
 }
 
 // CancelarSolicitud cancela una solicitud. Solo desde PENDIENTE o REQUIERE_INFO (RN-005).
 // Devuelve el cupo (RN-002c).
 func CancelarSolicitud(id int, body map[string]interface{}) error {
-	var solicitud map[string]interface{}
-	if err := helpers.GetCRUD(fmt.Sprintf("/solicitud_beneficio/%d", id), &solicitud); err != nil {
-		return fmt.Errorf("solicitud no encontrada")
+	// RN-005: validar máquina de estados con el estado vigente del historial
+	estado, estadoId, err := getEstadoActual(id)
+	if err != nil {
+		return err
 	}
-
-	// RN-005: validar máquina de estados
-	estado := getEstadoCodigo(solicitud)
 	if estado != estadoPendiente && estado != estadoRequiereInfo {
 		return fmt.Errorf("solo se puede cancelar una solicitud en estado PENDIENTE o REQUIERE_INFO, estado actual: %s", estado)
 	}
@@ -118,23 +133,8 @@ func CancelarSolicitud(id int, body map[string]interface{}) error {
 	// RN-002c: devolver cupo
 	// TODO: incrementar cupos_disponibles del beneficio atómicamente
 
-	// Actualizar estado
-	update := map[string]interface{}{
-		"estado_solicitud": map[string]interface{}{"codigo_abreviacion": estadoCancelada},
-	}
-	if err := helpers.PutCRUD(fmt.Sprintf("/solicitud_beneficio/%d", id), update); err != nil {
-		return err
-	}
-
-	// RN-004: registrar historial
-	historial := map[string]interface{}{
-		"solicitud_beneficio_id": id,
-		"estado_anterior":        map[string]interface{}{"codigo_abreviacion": estado},
-		"estado_nuevo":           map[string]interface{}{"codigo_abreviacion": estadoCancelada},
-		"usuario_id":             body["usuario_id"],
-	}
-	helpers.PostCRUD("/historial_estado_solicitud", historial, &map[string]interface{}{})
-	return nil
+	// C-4b: el cambio de estado ES la inserción en el historial (no hay campo que actualizar)
+	return registrarCambioEstado(id, estadoId, estadoCancelada, body["usuario_id"], nil)
 }
 
 // GetResumenEgresado retorna contadores de solicitudes por estado (RF-013).
@@ -168,12 +168,11 @@ func ResponderSolicitud(id int, body map[string]interface{}) error {
 		}
 	}
 
-	// RN-005: obtener estado actual y validar transición
-	var solicitud map[string]interface{}
-	if err := helpers.GetCRUD(fmt.Sprintf("/solicitud_beneficio/%d", id), &solicitud); err != nil {
-		return fmt.Errorf("solicitud no encontrada")
+	// RN-005: obtener estado vigente del historial y validar transición
+	estadoActual, estadoActualId, err := getEstadoActual(id)
+	if err != nil {
+		return err
 	}
-	estadoActual := getEstadoCodigo(solicitud)
 	if !transicionValida(estadoActual, nuevoEstado) {
 		return fmt.Errorf("transición de estado inválida: %s → %s", estadoActual, nuevoEstado)
 	}
@@ -183,39 +182,24 @@ func ResponderSolicitud(id int, body map[string]interface{}) error {
 		// TODO: incrementar cupos_disponibles del beneficio atómicamente
 	}
 
-	update := map[string]interface{}{
-		"estado_solicitud": map[string]interface{}{"codigo_abreviacion": nuevoEstado},
-	}
-	if err := helpers.PutCRUD(fmt.Sprintf("/solicitud_beneficio/%d", id), update); err != nil {
-		return err
-	}
-
-	// RN-004: historial
-	historial := map[string]interface{}{
-		"solicitud_beneficio_id": id,
-		"estado_anterior":        map[string]interface{}{"codigo_abreviacion": estadoActual},
-		"estado_nuevo":           map[string]interface{}{"codigo_abreviacion": nuevoEstado},
-		"usuario_id":             body["usuario_id"],
-		"justificacion":          body["justificacion"],
-	}
-	helpers.PostCRUD("/historial_estado_solicitud", historial, &map[string]interface{}{})
-	return nil
+	// RN-004 / C-4b: insertar en historial (única fuente de estado)
+	return registrarCambioEstado(id, estadoActualId, nuevoEstado, body["usuario_id"], body["justificacion"])
 }
 
 // EnviarMensaje envía un mensaje en la solicitud (solo si estado = REQUIERE_INFO).
 func EnviarMensaje(solicitudId int, body map[string]interface{}) (interface{}, error) {
-	var solicitud map[string]interface{}
-	if err := helpers.GetCRUD(fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &solicitud); err != nil {
-		return nil, fmt.Errorf("solicitud no encontrada")
+	estado, _, err := getEstadoActual(solicitudId)
+	if err != nil {
+		return nil, err
 	}
-	if getEstadoCodigo(solicitud) != estadoRequiereInfo {
+	if estado != estadoRequiereInfo {
 		return nil, fmt.Errorf("solo se pueden enviar mensajes cuando la solicitud está en REQUIERE_INFO")
 	}
 
 	payload := map[string]interface{}{
-		"solicitud_beneficio_id": solicitudId,
-		"usuario_id":             body["usuario_id"],
-		"mensaje":                body["mensaje"],
+		"solicitud_beneficio": map[string]interface{}{"id": solicitudId},
+		"usuario":             map[string]interface{}{"id": toInt(body["usuario_id"])},
+		"mensaje":             body["mensaje"],
 	}
 	var result interface{}
 	if err := helpers.PostCRUD("/mensaje_solicitud", payload, &result); err != nil {
@@ -227,7 +211,7 @@ func EnviarMensaje(solicitudId int, body map[string]interface{}) (interface{}, e
 // GetMensajes retorna el historial de mensajes de una solicitud.
 func GetMensajes(solicitudId int) (interface{}, error) {
 	var result interface{}
-	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true", solicitudId)
+	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&limit=0", solicitudId)
 	if err := helpers.GetCRUD(query, &result); err != nil {
 		return nil, err
 	}
@@ -255,23 +239,59 @@ func transicionValida(actual, nuevo string) bool {
 	return false
 }
 
-func getEstadoCodigo(solicitud map[string]interface{}) string {
-	if estado, ok := solicitud["estado_solicitud"].(map[string]interface{}); ok {
-		if codigo, ok := estado["codigo_abreviacion"].(string); ok {
-			return codigo
-		}
+// getEstadoActual deriva el estado vigente de una solicitud del último registro
+// del historial (C-4b) y lo traduce a codigo_abreviacion vía el servicio de parámetros.
+func getEstadoActual(solicitudId int) (codigo string, estadoId int, err error) {
+	var vigente map[string]interface{}
+	if err = helpers.GetCRUD(fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
+		return "", 0, fmt.Errorf("no se pudo obtener el estado de la solicitud %d: %v", solicitudId, err)
 	}
-	return ""
+	estadoId = toInt(vigente["estado_nuevo_id"])
+	if estadoId == 0 {
+		return "", 0, fmt.Errorf("la solicitud %d no tiene historial de estado", solicitudId)
+	}
+	codigo, err = ResolverParametroCodigo(TipoParamEstadoSolicitud, estadoId)
+	if err != nil {
+		return "", 0, err
+	}
+	return codigo, estadoId, nil
 }
 
-func getLimiteActivas() (int, error) {
-	var param map[string]interface{}
-	if err := helpers.GetCRUD("/parametro_sistema?query=Clave:LIMITE_SOLICITUDES_ACTIVAS_EGRESADO,Activo:true", &param); err != nil {
-		return 5, nil // valor por defecto si no se puede leer
+// registrarCambioEstado inserta la transición en historial_solicitud (RN-004, C-4b).
+func registrarCambioEstado(solicitudId, estadoAnteriorId int, nuevoEstadoCodigo string, usuarioId, justificacion interface{}) error {
+	nuevoId, err := ResolverParametroId(TipoParamEstadoSolicitud, nuevoEstadoCodigo)
+	if err != nil {
+		return err
 	}
-	if valor, ok := param["valor"].(string); ok {
-		if v, err := strconv.Atoi(valor); err == nil {
-			return v, nil
+	historial := map[string]interface{}{
+		"solicitud_beneficio": map[string]interface{}{"id": solicitudId},
+		"estado_anterior_id":  estadoAnteriorId,
+		"estado_nuevo_id":     nuevoId,
+		"usuario":             map[string]interface{}{"id": toInt(usuarioId)},
+	}
+	if justificacion != nil {
+		historial["justificacion"] = justificacion
+	}
+	return helpers.PostCRUD("/historial_solicitud", historial, &map[string]interface{}{})
+}
+
+// getLimiteActivas lee el límite de solicitudes activas por egresado (RN-010)
+// del servicio de parámetros (tipo PARAMETRO_SISTEMA).
+func getLimiteActivas() (int, error) {
+	params, err := GetParametrosPorTipo(TipoParamParametroSistema)
+	if err != nil {
+		return 5, nil // valor por defecto si el servicio no está disponible
+	}
+	for _, p := range params {
+		if firstOf(p, "CodigoAbreviacion", "codigo_abreviacion") == "LIMITE_SOLICITUDES_ACTIVAS_EGRESADO" {
+			switch valor := firstOf(p, "Valor", "valor").(type) {
+			case string:
+				if v, err := strconv.Atoi(valor); err == nil {
+					return v, nil
+				}
+			case float64:
+				return int(valor), nil
+			}
 		}
 	}
 	return 5, nil
