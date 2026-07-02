@@ -10,7 +10,7 @@ type CatalogosController struct{ web.Controller }
 
 // GetCategorias GET /v1/categorias-beneficio
 func (c *CatalogosController) GetCategorias() {
-	result, err := services.GetCategoriasBeneficio()
+	result, err := services.GetCategoriasBeneficio(c.Ctx.Input.Header("Authorization"))
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -20,7 +20,7 @@ func (c *CatalogosController) GetCategorias() {
 
 // GetSectores GET /v1/sectores-economicos
 func (c *CatalogosController) GetSectores() {
-	result, err := services.GetSectoresEconomicos()
+	result, err := services.GetSectoresEconomicos(c.Ctx.Input.Header("Authorization"))
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return

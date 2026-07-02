@@ -31,12 +31,21 @@ func init() {
 	web.Router("/v1/solicitudes/:id/responder", &controllers.SolicitudesController{}, "put:Responder")
 	web.Router("/v1/solicitudes/:id/mensajes", &controllers.SolicitudesController{}, "post:EnviarMensaje;get:GetMensajes")
 
+	// ── Egresados ─────────────────────────────────────────────────────────────
+	// POST /v1/egresados/provision                 C-2a JIT provisioning al login
+	web.Router("/v1/egresados/provision", &controllers.EgresadosController{}, "post:Provisionar")
+
 	// ── Empresas ──────────────────────────────────────────────────────────────
-	// POST /v1/empresas                            RF-004 registrar empresa
+	// POST /v1/empresas/provision                  C-2b/c JIT provisioning al login
+	// GET  /v1/empresas/:id                        perfil público (detalle beneficio)
+	// GET  /v1/usuarios/:usuario_id/empresas       selector multiempresa (caso 1:N)
 	// POST /v1/empresas/:empresa_id/beneficios     RF-005 publicar beneficio
+	// GET  /v1/empresas/:empresa_id/beneficios     gestión: mis beneficios (dueño)
 	// PUT  /v1/beneficios/:id                      RF-005 editar beneficio
-	web.Router("/v1/empresas", &controllers.EmpresasController{}, "post:Registrar")
-	web.Router("/v1/empresas/:empresa_id/beneficios", &controllers.BeneficiosController{}, "post:Publicar")
+	web.Router("/v1/empresas/provision", &controllers.EmpresasController{}, "post:Provisionar")
+	web.Router("/v1/empresas/:id", &controllers.EmpresasController{}, "get:GetPerfil")
+	web.Router("/v1/usuarios/:usuario_id/empresas", &controllers.EmpresasController{}, "get:GetEmpresasDeUsuario")
+	web.Router("/v1/empresas/:empresa_id/beneficios", &controllers.BeneficiosController{}, "post:Publicar;get:GetByEmpresa")
 	web.Router("/v1/beneficios/:id", &controllers.BeneficiosController{}, "put:Editar")
 
 	// ── Administrador ─────────────────────────────────────────────────────────

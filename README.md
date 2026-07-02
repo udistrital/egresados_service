@@ -41,6 +41,8 @@ Capas hermanas:
 | `BENEFICIOS_EGRESADOS_MID_CRUD_URL` | `http://localhost:8080/v1` | URL del CRUD del módulo |
 | `BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1` | Servicio institucional de parámetros |
 | `BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1` | autenticacion_mid (userRol) |
+| `BENEFICIOS_EGRESADOS_MID_AMAZON_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1` | Datos de proveedor/empresa (C-2b) |
+| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Dev local**: si `true`, resuelve los parámetros (estados, categorías…) desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. Los ids del seed deben coincidir con los insertados en la BD de desarrollo (PUBLICADO=21, APROBADA empresa=10, categorías 40-45, etc.). |
 | `BENEFICIOS_EGRESADOS_MID_PORT` | `8080` | Puerto HTTP (en desarrollo local se usa `8081` para no chocar con el CRUD) |
 | `BENEFICIOS_EGRESADOS_MID_RUNMODE` | `dev` | Modo de ejecución de Beego |
 
@@ -64,7 +66,8 @@ GET  /solicitudes/egresado/:egresado_id/resumen
 PUT  /solicitudes/:id/cancelar                RN-005: solo PENDIENTE/REQUIERE_INFO
 
 # Empresa
-POST /empresas                                registro de empresa
+POST /empresas/provision                      JIT provisioning al login (C-2b/c): {email}
+GET  /usuarios/:usuario_id/empresas           selector multiempresa (caso 1:N)
 GET  /empresas/:empresa_id/solicitudes        bandeja (datos mínimos del egresado, RNF-002b)
 POST /empresas/:empresa_id/beneficios         publicar beneficio (RN-008b, empresa APROBADA)
 PUT  /beneficios/:id                          editar beneficio
@@ -80,11 +83,17 @@ GET  /sectores-economicos                     proxy del servicio de parámetros
 
 ## Pendientes conocidos
 
-- RN-007 (solicitud única por egresado+beneficio) y RN-010 (límite de activas):
-  TODOs en `solicitudes_service.go` — implementables con `query=` del CRUD.
-- RN-002b/c (descuento/devolución atómica de cupos): pendiente endpoint dedicado.
-- JIT provisioning (alta de `usuario`/`egresado`/`usuario_empresa` al primer login).
-- Validación del JWT de WSO2 (`utils_oas`) en cada request.
+- RN-007 (solicitud única en curso por egresado+beneficio) y RN-010 (límite de
+  activas): HECHO — validan en `CrearSolicitud` con `beneficiosConSolicitudActiva`
+  (cuenta solo estados no terminales); rechazan antes de reservar el cupo.
+- RN-002b/c (descuento/devolución atómica de cupos): HECHO — CRUD expone
+  `POST /beneficio/:id/cupo/descontar|devolver` (UPDATE atómico con guard); el MID
+  reserva al crear la solicitud (con compensación) y devuelve al cancelar/rechazar.
+- JIT provisioning: **empresa hecho** (`POST /empresas/provision`, C-2b/c); falta el
+  de egresado (`usuario`/`egresado` al primer login).
+- Validación del JWT de WSO2 (`utils_oas`) en cada request. **De esto depende que el
+  JIT de empresa reciba el email desde un token validado y no del body** (ver
+  `ProvisionarEmpresa`).
 
 ## Contexto
 

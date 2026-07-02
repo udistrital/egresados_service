@@ -20,7 +20,8 @@ func (c *BeneficiosController) GetCatalogo() {
 	empresaId, _ := c.GetInt("empresa_id", 0)
 	q := c.GetString("q")
 
-	result, err := services.GetCatalogoBeneficios(page, limit, categoriaId, empresaId, q)
+	token := c.Ctx.Input.Header("Authorization")
+	result, err := services.GetCatalogoBeneficios(token, page, limit, categoriaId, empresaId, q)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -36,9 +37,26 @@ func (c *BeneficiosController) GetOne() {
 		helpers.BadRequest(&c.Controller, "id inválido")
 		return
 	}
-	result, err := services.GetBeneficioDetalle(id)
+	result, err := services.GetBeneficioDetalle(c.Ctx.Input.Header("Authorization"), id)
 	if err != nil {
 		helpers.NotFound(&c.Controller, "beneficio")
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
+// GetByEmpresa GET /v1/empresas/:empresa_id/beneficios
+// Vista de gestión del dueño: TODOS sus beneficios (cualquier estado) con
+// métricas de solicitudes.
+func (c *BeneficiosController) GetByEmpresa() {
+	empresaId, err := c.GetInt(":empresa_id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "empresa_id inválido")
+		return
+	}
+	result, err := services.GetBeneficiosDeEmpresa(c.Ctx.Input.Header("Authorization"), empresaId)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
 		return
 	}
 	helpers.Ok(&c.Controller, result)
@@ -59,7 +77,7 @@ func (c *BeneficiosController) Publicar() {
 		return
 	}
 
-	result, err := services.PublicarBeneficio(empresaId, body)
+	result, err := services.PublicarBeneficio(c.Ctx.Input.Header("Authorization"), empresaId, body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -82,7 +100,7 @@ func (c *BeneficiosController) Editar() {
 		return
 	}
 
-	if err := services.EditarBeneficio(id, body); err != nil {
+	if err := services.EditarBeneficio(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}

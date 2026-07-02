@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/beego/beego/v2/server/web"
+	"github.com/beego/beego/v2/server/web/filter/cors"
 	_ "github.com/udistrital/sga_mid_beneficios_egresados/routers"
 )
 
@@ -17,6 +18,16 @@ func init() {
 	if runmode := os.Getenv("BENEFICIOS_EGRESADOS_MID_RUNMODE"); runmode != "" {
 		web.BConfig.RunMode = runmode
 	}
+
+	// CORS: el micro-frontend (localhost:4200) llama al MID cross-origin. Se permiten
+	// todos los orígenes (API pública tras el gateway); Authorization va en AllowHeaders
+	// para que el AuthInterceptor pueda anexar el Bearer. Maneja también el preflight OPTIONS.
+	web.InsertFilter("*", web.BeforeRouter, cors.Allow(&cors.Options{
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:    []string{"Origin", "Authorization", "Content-Type", "Accept"},
+		ExposeHeaders:   []string{"Content-Length"},
+	}))
 }
 
 func main() {

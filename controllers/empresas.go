@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"encoding/json"
+	"fmt"
 
 	"github.com/beego/beego/v2/server/web"
 	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
@@ -10,21 +10,52 @@ import (
 
 type EmpresasController struct{ web.Controller }
 
-// Registrar POST /v1/empresas
-// Registrar empresa. Estado inicial = EN_REVISION. Valida contra Ágora.
-func (c *EmpresasController) Registrar() {
-	var body map[string]interface{}
-	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
-		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
-		return
-	}
-
-	result, err := services.RegistrarEmpresa(body)
+// Provisionar POST /v1/empresas/provision
+// JIT provisioning del usuario de empresa al primer login (C-2b/c): resuelve su
+// identidad (desde el token vía OIDC userinfo) y sus proveedores en Ágora, y da de alta
+// usuario/empresa/usuario_empresa. No recibe body: la identidad sale del token.
+func (c *EmpresasController) Provisionar() {
+	result, err := services.ProvisionarEmpresa(c.Ctx.Input.Header("Authorization"))
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
-	helpers.Created(&c.Controller, result)
+	helpers.Ok(&c.Controller, result)
+}
+
+// GetEmpresasDeUsuario GET /v1/usuarios/:usuario_id/empresas
+// Empresas a las que el usuario tiene acceso (selector multiempresa, caso 1:N).
+func (c *EmpresasController) GetEmpresasDeUsuario() {
+	usuarioId, err := c.GetInt(":usuario_id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "usuario_id inválido")
+		return
+	}
+
+	result, err := services.GetEmpresasDeUsuario(c.Ctx.Input.Header("Authorization"), usuarioId)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
+// GetPerfil GET /v1/empresas/:id
+// Perfil público de la empresa (razón social, descripción/web/dirección de Ágora
+// on-demand, métricas de beneficios). Whitelist RNF-002b — sin NIT ni datos bancarios.
+func (c *EmpresasController) GetPerfil() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+	result, err := services.GetPerfilEmpresa(c.Ctx.Input.Header("Authorization"), id)
+	if err != nil {
+		// NotFound ya añade "no encontrado"; pasar solo el recurso.
+		helpers.NotFound(&c.Controller, fmt.Sprintf("empresa %d", id))
+		return
+	}
+	helpers.Ok(&c.Controller, result)
 }
 
 // GetBandeja GET /v1/empresas/:empresa_id/solicitudes
@@ -36,7 +67,7 @@ func (c *EmpresasController) GetBandeja() {
 		return
 	}
 
-	result, err := services.GetBandejaEmpresa(empresaId)
+	result, err := services.GetBandejaEmpresa(c.Ctx.Input.Header("Authorization"), empresaId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return

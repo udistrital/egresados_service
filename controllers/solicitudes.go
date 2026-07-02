@@ -20,7 +20,7 @@ func (c *SolicitudesController) Crear() {
 		return
 	}
 
-	result, err := services.CrearSolicitud(body)
+	result, err := services.CrearSolicitud(c.Ctx.Input.Header("Authorization"), body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -37,7 +37,7 @@ func (c *SolicitudesController) GetByEgresado() {
 		return
 	}
 
-	result, err := services.GetSolicitudesByEgresado(egresadoId)
+	result, err := services.GetSolicitudesByEgresado(c.Ctx.Input.Header("Authorization"), egresadoId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -58,7 +58,7 @@ func (c *SolicitudesController) Cancelar() {
 	var body map[string]interface{}
 	json.Unmarshal(c.Ctx.Input.RequestBody, &body)
 
-	if err := services.CancelarSolicitud(id, body); err != nil {
+	if err := services.CancelarSolicitud(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -74,7 +74,7 @@ func (c *SolicitudesController) Resumen() {
 		return
 	}
 
-	result, err := services.GetResumenEgresado(egresadoId)
+	result, err := services.GetResumenEgresado(c.Ctx.Input.Header("Authorization"), egresadoId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -98,7 +98,7 @@ func (c *SolicitudesController) Responder() {
 		return
 	}
 
-	if err := services.ResponderSolicitud(id, body); err != nil {
+	if err := services.ResponderSolicitud(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -120,7 +120,7 @@ func (c *SolicitudesController) EnviarMensaje() {
 		return
 	}
 
-	result, err := services.EnviarMensaje(id, body)
+	result, err := services.EnviarMensaje(c.Ctx.Input.Header("Authorization"), id, body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -137,7 +137,7 @@ func (c *SolicitudesController) GetMensajes() {
 		return
 	}
 
-	result, err := services.GetMensajes(id)
+	result, err := services.GetMensajes(c.Ctx.Input.Header("Authorization"), id)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return

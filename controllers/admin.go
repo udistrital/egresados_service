@@ -16,7 +16,7 @@ func (c *AdminController) SuspenderEmpresa() {
 		return
 	}
 
-	if err := services.SuspenderEmpresa(id); err != nil {
+	if err := services.SuspenderEmpresa(c.Ctx.Input.Header("Authorization"), id); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}

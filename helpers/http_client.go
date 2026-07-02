@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,15 @@ var (
 	crudURL       = getEnv("BENEFICIOS_EGRESADOS_MID_CRUD_URL", "http://localhost:8080/v1")
 	authURL       = getEnv("BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1")
 	parametrosURL = getEnv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1")
+	// Datos de proveedor/empresa (C-2b). OJO: es administrativa_amazon_api, NO agora_crud.
+	amazonURL = getEnv("BENEFICIOS_EGRESADOS_MID_AMAZON_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1")
+	// OIDC userinfo: identidad del dueño del token (sin pasar email). OJO: NO va bajo
+	// /apioas, es endpoint directo de WSO2.
+	userinfoURL = getEnv("BENEFICIOS_EGRESADOS_MID_USERINFO_URL", "https://autenticacion.portaloas.udistrital.edu.co/oauth2/userinfo")
+	// Identidad institucional del egresado (C-2a): nombre real y TerceroId por documento.
+	tercerosURL = getEnv("BENEFICIOS_EGRESADOS_MID_TERCEROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/terceros_crud/v1")
+	// consultar_persona (C-2a) vive en sga_mid/v1, NO en derecho_pecunario_mid.
+	sgaMidURL = getEnv("BENEFICIOS_EGRESADOS_MID_SGA_MID_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/sga_mid/v1")
 )
 
 func getEnv(key, fallback string) string {
@@ -22,73 +32,91 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// GetCRUD realiza un GET al CRUD y decodifica la respuesta en dest.
-func GetCRUD(path string, dest interface{}) error {
-	resp, err := http.Get(fmt.Sprintf("%s%s", crudURL, path))
+// doRequest realiza una petición HTTP propagando el token del usuario (Bearer del
+// request entrante). El gateway institucional (parámetros, autenticacion_mid, Ágora)
+// rechaza con 401 cualquier llamada sin este header; el token viaja explícitamente
+// desde el controller (request-scoped) para ser seguro bajo concurrencia — nunca en
+// una variable global de paquete. Si token == "" no se añade el header (útil para el
+// CRUD local mientras no valide JWT).
+func doRequest(method, token, urlStr string, payload interface{}) ([]byte, int, error) {
+	var bodyReader io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, 0, err
+		}
+		bodyReader = strings.NewReader(string(b))
+	}
+
+	req, err := http.NewRequest(method, urlStr, bodyReader)
 	if err != nil {
-		return err
+		return nil, 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		// El header entrante ya viene con el prefijo "Bearer "; se reenvía tal cual.
+		req.Header.Set("Authorization", token)
+	}
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
+}
+
+// normalizarListaVacia convierte el idioma [{}] de los *_crud del SGA (lista vacía)
+// en un array vacío real, para no inyectar un elemento zero-value en dest. Compacta
+// el JSON antes de comparar: en RunMode=dev Beego responde pretty-printed
+// ("[\n  {}\n]"), que una comparación literal con "[{}]" no detecta.
+func normalizarListaVacia(body []byte) []byte {
+	compact := new(bytes.Buffer)
+	if err := json.Compact(compact, body); err == nil && compact.String() == "[{}]" {
+		return []byte("[]")
+	}
+	return body
+}
+
+// GetCRUD realiza un GET al CRUD y decodifica la respuesta en dest.
+func GetCRUD(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", crudURL, path), nil)
+	if err != nil {
 		return err
 	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("CRUD respondió %d: %s", resp.StatusCode, string(body))
+	if status >= 400 {
+		return fmt.Errorf("CRUD respondió %d: %s", status, string(body))
 	}
-	// Los GetAll del CRUD responden [{}] cuando la lista está vacía (idioma de los
-	// *_crud del SGA); normalizar para no inyectar un elemento zero-value en dest.
-	if strings.TrimSpace(string(body)) == "[{}]" {
-		body = []byte("[]")
-	}
-	return json.Unmarshal(body, dest)
+	return json.Unmarshal(normalizarListaVacia(body), dest)
 }
 
 // PostCRUD realiza un POST al CRUD con el payload dado y decodifica la respuesta en dest.
-func PostCRUD(path string, payload interface{}, dest interface{}) error {
-	b, err := json.Marshal(payload)
+func PostCRUD(token, path string, payload interface{}, dest interface{}) error {
+	body, status, err := doRequest(http.MethodPost, token, fmt.Sprintf("%s%s", crudURL, path), payload)
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(
-		fmt.Sprintf("%s%s", crudURL, path),
-		"application/json",
-		strings.NewReader(string(b)),
-	)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	if status >= 400 {
+		return fmt.Errorf("CRUD respondió %d: %s", status, string(body))
 	}
 	return json.Unmarshal(body, dest)
 }
 
 // PutCRUD realiza un PUT al CRUD con el payload dado.
-func PutCRUD(path string, payload interface{}) error {
-	b, err := json.Marshal(payload)
+func PutCRUD(token, path string, payload interface{}) error {
+	body, status, err := doRequest(http.MethodPut, token, fmt.Sprintf("%s%s", crudURL, path), payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPut,
-		fmt.Sprintf("%s%s", crudURL, path),
-		strings.NewReader(string(b)),
-	)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("CRUD respondió %d: %s", resp.StatusCode, string(body))
+	if status >= 400 {
+		return fmt.Errorf("CRUD respondió %d: %s", status, string(body))
 	}
 	return nil
 }
@@ -96,17 +124,82 @@ func PutCRUD(path string, payload interface{}) error {
 // AuthURL devuelve la URL base del servicio de autenticación.
 func AuthURL() string { return authURL }
 
-// GetParametros realiza un GET al servicio institucional de parámetros y
-// decodifica la respuesta estándar { Success, Status, Message, Data } en dest.
-func GetParametros(path string, dest interface{}) error {
-	resp, err := http.Get(fmt.Sprintf("%s%s", parametrosURL, path))
+// PostAuth realiza un POST al servicio autenticacion_mid (p. ej. /token/userRol) y
+// decodifica la respuesta en dest. La respuesta NO usa el envelope { Success, Data }.
+func PostAuth(token, path string, payload interface{}, dest interface{}) error {
+	body, status, err := doRequest(http.MethodPost, token, fmt.Sprintf("%s%s", authURL, path), payload)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	if status >= 400 {
+		return fmt.Errorf("autenticacion_mid respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetAmazon realiza un GET al servicio administrativa_amazon_api (datos de proveedor)
+// y decodifica la respuesta en dest. La respuesta es un array JSON crudo (sin envelope).
+func GetAmazon(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", amazonURL, path), nil)
 	if err != nil {
 		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("administrativa_amazon_api respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetUserInfo consulta el endpoint OIDC userinfo y decodifica en dest la identidad del
+// dueño del token (sub, email, documento). Es la fuente CONFIABLE del email autenticado
+// (derivada del token, no del body) para el JIT provisioning.
+func GetUserInfo(token string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, userinfoURL, nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("userinfo respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetTerceros realiza un GET a terceros_crud y decodifica la respuesta en dest.
+// Responde array JSON crudo con el idioma [{}] = lista vacía (mismo contrato que
+// nuestro CRUD, que lo copió de terceros_crud).
+func GetTerceros(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", tercerosURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("terceros_crud respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(normalizarListaVacia(body), dest)
+}
+
+// GetSgaMid realiza un GET al sga_mid institucional (p. ej. consultar_persona, C-2a)
+// y decodifica la respuesta en dest.
+func GetSgaMid(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", sgaMidURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("sga_mid respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetParametros realiza un GET al servicio institucional de parámetros y
+// decodifica la respuesta estándar { Success, Status, Message, Data } en dest.
+func GetParametros(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", parametrosURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("servicio de parámetros respondió %d: %s", status, string(body))
 	}
 	return json.Unmarshal(body, dest)
 }

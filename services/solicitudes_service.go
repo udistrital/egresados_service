@@ -1,9 +1,10 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
+	"strings"
 
 	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
 )
@@ -21,7 +22,7 @@ const (
 // RN-007 (solicitud única por egresado+beneficio), RN-010 (límite activas),
 // RN-002b (decremento atómico de cupo), RN-RADICADO (generación de radicado),
 // RN-004 (inserción de historial — única fuente de estado, C-4b).
-func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
+func CrearSolicitud(token string, body map[string]interface{}) (interface{}, error) {
 	egresadoId, ok := body["egresado_id"]
 	if !ok {
 		return nil, fmt.Errorf("egresado_id es requerido")
@@ -34,53 +35,60 @@ func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 	eid := toInt(egresadoId)
 	bid := toInt(beneficioId)
 
-	// RN-007: verificar que no exista una solicitud activa para (egresado, beneficio)
-	// TODO: consultar CRUD /solicitud_beneficio?query=Egresado.Id:{eid},Beneficio.Id:{bid},Activo:true
-
-	// RN-010: verificar límite de solicitudes activas
-	limiteParam, err := getLimiteActivas()
+	// RN-007 y RN-010 comparten la misma consulta: las solicitudes EN CURSO del egresado
+	// (estado vigente no terminal). Una rechazada/cancelada no bloquea ni cuenta.
+	activas, err := beneficiosConSolicitudActiva(token, eid)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: contar solicitudes activas del egresado y comparar con limiteParam
-	_ = limiteParam
-
-	// RN-002b: decrementar cupo_disponible atómicamente
-	// TODO: implementar con SELECT FOR UPDATE en el CRUD o usando endpoint dedicado
-
-	// RN-RADICADO: generar radicado BNF-YYYY-NNNNNN con la secuencia del CRUD
-	anio := time.Now().Year()
-	var seqResp map[string]interface{}
-	if err := helpers.PostCRUD(
-		fmt.Sprintf("/secuencia_radicado/siguiente/%d", anio),
-		nil, &seqResp,
-	); err != nil {
-		return nil, fmt.Errorf("no se pudo generar el radicado: %v", err)
+	// RN-007: solicitud única en curso por (egresado, beneficio).
+	for _, existenteBid := range activas {
+		if existenteBid == bid {
+			return nil, fmt.Errorf("ya tienes una solicitud en curso para este beneficio")
+		}
 	}
-	numero := toInt(seqResp["numero"])
-	if numero == 0 {
-		return nil, fmt.Errorf("la secuencia de radicado no retornó número válido")
+	// RN-010: límite de solicitudes activas por egresado.
+	limite, err := getLimiteActivas(token)
+	if err != nil {
+		return nil, err
 	}
-	radicado := fmt.Sprintf("BNF-%d-%06d", anio, numero)
+	if len(activas) >= limite {
+		return nil, fmt.Errorf("alcanzaste el límite de %d solicitudes activas", limite)
+	}
 
-	// La solicitud ya no lleva estado propio (C-4b); el estado nace en el historial.
+	// RN-002b: reservar el cupo de forma ATÓMICA antes de crear la solicitud. Si algo
+	// falla después, se devuelve el cupo (compensación RN-002c).
+	descontado, err := descontarCupo(token, bid)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo verificar el cupo del beneficio %d: %v", bid, err)
+	}
+	if !descontado {
+		return nil, fmt.Errorf("el beneficio %d no tiene cupos disponibles", bid)
+	}
+
+	// La solicitud no lleva estado propio (C-4b); el estado nace en el historial.
+	// El radicado BNF-YYYY-NNNNNN lo genera la BD al insertar (C-5): no se envía.
 	solicitud := map[string]interface{}{
 		"egresado":  map[string]interface{}{"id": eid},
 		"beneficio": map[string]interface{}{"id": bid},
-		"radicado":  radicado,
 	}
-	if datos, ok := body["datos_complementarios"]; ok {
+	// La columna datos_complementarios es JSONB: el texto libre del formulario se
+	// normaliza a JSON válido (sin esto, Postgres rechaza el INSERT con
+	// "sintaxis de entrada no válida para tipo json").
+	if datos := aJSONB(body["datos_complementarios"]); datos != nil {
 		solicitud["datos_complementarios"] = datos
 	}
 
 	var result map[string]interface{}
-	if err := helpers.PostCRUD("/solicitud_beneficio", solicitud, &result); err != nil {
+	if err := helpers.PostCRUD(token, "/solicitud_beneficio", solicitud, &result); err != nil {
+		devolverCupo(token, bid)
 		return nil, err
 	}
 
 	// RN-004 / C-4b: el registro inicial del historial define el estado PENDIENTE
-	pendienteId, err := ResolverParametroId(TipoParamEstadoSolicitud, estadoPendiente)
+	pendienteId, err := ResolverParametroId(token, TipoParamEstadoSolicitud, estadoPendiente)
 	if err != nil {
+		devolverCupo(token, bid)
 		return nil, err
 	}
 	solicitudId := toInt(result["id"])
@@ -93,9 +101,18 @@ func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 		"estado_nuevo_id":     pendienteId,
 		"usuario":             map[string]interface{}{"id": usuarioId},
 	}
-	if err := helpers.PostCRUD("/historial_solicitud", historial, &map[string]interface{}{}); err != nil {
+	if err := helpers.PostCRUD(token, "/historial_solicitud", historial, &map[string]interface{}{}); err != nil {
+		devolverCupo(token, bid)
 		// Sin historial la solicitud queda sin estado: es un error real, no advertencia
 		return nil, fmt.Errorf("solicitud %d creada pero no se pudo registrar su estado inicial: %v", solicitudId, err)
+	}
+
+	// C-5 + hueco#2: leer el radicado que generó la BD para devolverlo en la respuesta.
+	var creada map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &creada); err == nil {
+		if rad := asString(firstOf(creada, "radicado", "Radicado")); rad != "" {
+			result["radicado"] = rad
+		}
 	}
 
 	return result, nil
@@ -103,48 +120,116 @@ func CrearSolicitud(body map[string]interface{}) (interface{}, error) {
 
 // GetSolicitudesByEgresado retorna las solicitudes de un egresado con su estado
 // vigente derivado del historial (C-4b).
-func GetSolicitudesByEgresado(egresadoId int) (interface{}, error) {
+func GetSolicitudesByEgresado(token string, egresadoId int) (interface{}, error) {
 	var solicitudes []map[string]interface{}
 	query := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
-	if err := helpers.GetCRUD(query, &solicitudes); err != nil {
+	if err := helpers.GetCRUD(token, query, &solicitudes); err != nil {
 		return nil, err
 	}
 	for _, s := range solicitudes {
-		if codigo, estadoId, err := getEstadoActual(toInt(s["id"])); err == nil {
+		if codigo, estadoId, err := getEstadoActual(token, toInt(s["id"])); err == nil {
 			s["estado_solicitud_id"] = estadoId
 			s["estado_solicitud"] = codigo
 		}
+		s["datos_complementarios"] = desdeJSONB(s["datos_complementarios"])
 	}
 	return solicitudes, nil
 }
 
+// aJSONB normaliza el valor del formulario para la columna JSONB: si ya es JSON
+// válido pasa tal cual; el texto libre se codifica como string JSON ("texto").
+// Vacíos → nil (el caller omite el campo y la columna queda NULL).
+func aJSONB(v interface{}) interface{} {
+	s, esString := v.(string)
+	if !esString {
+		return v // nil u objetos del body (ya serializan como JSON válido)
+	}
+	if s == "" {
+		return nil
+	}
+	if json.Valid([]byte(s)) {
+		return s
+	}
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// desdeJSONB deshace aJSONB para el frontend: si el valor almacenado es un string
+// JSON escalar ("texto"), devuelve el texto plano; cualquier otra forma pasa igual.
+func desdeJSONB(v interface{}) interface{} {
+	raw, esString := v.(string)
+	if !esString {
+		return v
+	}
+	var texto string
+	if err := json.Unmarshal([]byte(raw), &texto); err == nil {
+		return texto
+	}
+	return v
+}
+
 // CancelarSolicitud cancela una solicitud. Solo desde PENDIENTE o REQUIERE_INFO (RN-005).
 // Devuelve el cupo (RN-002c).
-func CancelarSolicitud(id int, body map[string]interface{}) error {
+func CancelarSolicitud(token string, id int, body map[string]interface{}) error {
 	// RN-005: validar máquina de estados con el estado vigente del historial
-	estado, estadoId, err := getEstadoActual(id)
+	estado, estadoId, err := getEstadoActual(token, id)
 	if err != nil {
 		return err
 	}
-	if estado != estadoPendiente && estado != estadoRequiereInfo {
-		return fmt.Errorf("solo se puede cancelar una solicitud en estado PENDIENTE o REQUIERE_INFO, estado actual: %s", estado)
+	// RN-005 extendida (2026-07-02): EN_REVISION también es cancelable — es un
+	// estado "en curso" que antes era inalcanzable cuando se redactó la regla
+	// (ahora lo pone el ping-pong del hilo: egresado responde → EN_REVISION).
+	if estado != estadoPendiente && estado != estadoRequiereInfo && estado != estadoEnRevision {
+		return fmt.Errorf("solo se puede cancelar una solicitud en curso (PENDIENTE, REQUIERE_INFO o EN_REVISION), estado actual: %s", estado)
 	}
 
-	// RN-002c: devolver cupo
-	// TODO: incrementar cupos_disponibles del beneficio atómicamente
+	// RN-002c: se obtiene el beneficio ANTES del cambio para poder devolver el cupo.
+	bid, err := getBeneficioIdDeSolicitud(token, id)
+	if err != nil {
+		return err
+	}
 
 	// C-4b: el cambio de estado ES la inserción en el historial (no hay campo que actualizar)
-	return registrarCambioEstado(id, estadoId, estadoCancelada, body["usuario_id"], nil)
+	if err := registrarCambioEstado(token, id, estadoId, estadoCancelada, body["usuario_id"], nil); err != nil {
+		return err
+	}
+	devolverCupo(token, bid) // RN-002c: el cupo vuelve al pool
+	return nil
 }
 
-// GetResumenEgresado retorna contadores de solicitudes por estado (RF-013).
-func GetResumenEgresado(egresadoId int) (interface{}, error) {
-	// TODO: implementar consultas por estado al CRUD y agrupar contadores
+// GetResumenEgresado retorna contadores de solicitudes por estado (RF-013): agrupa las
+// solicitudes del egresado según su estado vigente (derivado del historial, C-4b).
+// Nota: N+1 de getEstadoActual (una por solicitud); optimizable con un fetch único de
+// ESTADO_SOLICITUD si el volumen por egresado crece.
+func GetResumenEgresado(token string, egresadoId int) (interface{}, error) {
 	resumen := map[string]int{
 		"activas":    0,
 		"aprobadas":  0,
 		"rechazadas": 0,
 		"canceladas": 0,
+	}
+	var solicitudes []map[string]interface{}
+	q := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
+		return nil, err
+	}
+	for _, s := range solicitudes {
+		codigo, _, err := getEstadoActual(token, toInt(s["id"]))
+		if err != nil {
+			continue // solicitud sin historial: no se cuenta
+		}
+		switch codigo {
+		case estadoAprobada:
+			resumen["aprobadas"]++
+		case estadoRechazada:
+			resumen["rechazadas"]++
+		case estadoCancelada:
+			resumen["canceladas"]++
+		default:
+			if esEstadoNoTerminal(codigo) {
+				resumen["activas"]++
+			}
+		}
 	}
 	return resumen, nil
 }
@@ -154,65 +239,137 @@ func GetResumenEgresado(egresadoId int) (interface{}, error) {
 // RN-002c: devolver cupo si RECHAZADA.
 // RN-004: registrar historial.
 // RN-005: validar máquina de estados.
-func ResponderSolicitud(id int, body map[string]interface{}) error {
+func ResponderSolicitud(token string, id int, body map[string]interface{}) error {
 	nuevoEstado, ok := body["estado_nuevo"].(string)
 	if !ok || nuevoEstado == "" {
 		return fmt.Errorf("estado_nuevo es requerido")
 	}
+	justificacion, _ := body["justificacion"].(string)
 
 	// RN-003: justificación obligatoria al rechazar
-	if nuevoEstado == estadoRechazada {
-		justificacion, _ := body["justificacion"].(string)
-		if len(justificacion) < 20 {
-			return fmt.Errorf("la justificación debe tener al menos 20 caracteres al rechazar")
-		}
+	if nuevoEstado == estadoRechazada && len(justificacion) < 20 {
+		return fmt.Errorf("la justificación debe tener al menos 20 caracteres al rechazar")
 	}
 
 	// RN-005: obtener estado vigente del historial y validar transición
-	estadoActual, estadoActualId, err := getEstadoActual(id)
+	estadoActual, estadoActualId, err := getEstadoActual(token, id)
 	if err != nil {
 		return err
 	}
+
+	// Caso especial: ya está en REQUIERE_INFO y la empresa vuelve a "pedir
+	// información" — no hay transición de estado; la pregunta adicional se
+	// publica como un mensaje más del hilo (así se pide más de una cosa).
+	if estadoActual == estadoRequiereInfo && nuevoEstado == estadoRequiereInfo {
+		if strings.TrimSpace(justificacion) == "" {
+			return fmt.Errorf("la solicitud ya está en REQUIERE_INFO; escribe el mensaje para el egresado")
+		}
+		_, err := EnviarMensaje(token, id, map[string]interface{}{
+			"usuario_id": body["usuario_id"], "mensaje": justificacion,
+		})
+		return err
+	}
+
 	if !transicionValida(estadoActual, nuevoEstado) {
 		return fmt.Errorf("transición de estado inválida: %s → %s", estadoActual, nuevoEstado)
 	}
 
-	// RN-002c: devolver cupo si se rechaza
+	// RN-002c: si se rechaza, se obtiene el beneficio antes para devolver el cupo.
+	var bid int
 	if nuevoEstado == estadoRechazada {
-		// TODO: incrementar cupos_disponibles del beneficio atómicamente
+		if bid, err = getBeneficioIdDeSolicitud(token, id); err != nil {
+			return err
+		}
 	}
 
 	// RN-004 / C-4b: insertar en historial (única fuente de estado)
-	return registrarCambioEstado(id, estadoActualId, nuevoEstado, body["usuario_id"], body["justificacion"])
+	if err := registrarCambioEstado(token, id, estadoActualId, nuevoEstado, body["usuario_id"], body["justificacion"]); err != nil {
+		return err
+	}
+	if nuevoEstado == estadoRechazada {
+		devolverCupo(token, bid) // RN-002c: el cupo vuelve al pool al rechazar
+	}
+
+	// La nota de "pedir información" ABRE EL HILO: se publica como primer mensaje
+	// de la empresa. Es lo único que el egresado VE (la justificación del historial
+	// no le llega); sin esto el estado cambiaba pero la pregunta se perdía.
+	if nuevoEstado == estadoRequiereInfo && strings.TrimSpace(justificacion) != "" {
+		if _, err := EnviarMensaje(token, id, map[string]interface{}{
+			"usuario_id": body["usuario_id"], "mensaje": justificacion,
+		}); err != nil {
+			return fmt.Errorf("la solicitud pasó a REQUIERE_INFO pero el mensaje no se pudo publicar: %v", err)
+		}
+	}
+	return nil
 }
 
-// EnviarMensaje envía un mensaje en la solicitud (solo si estado = REQUIERE_INFO).
-func EnviarMensaje(solicitudId int, body map[string]interface{}) (interface{}, error) {
-	estado, _, err := getEstadoActual(solicitudId)
+// EnviarMensaje envía un mensaje en la solicitud. El hilo vive mientras la
+// conversación está abierta: REQUIERE_INFO (la pelota está en el egresado) o
+// EN_REVISION (la pelota está en la empresa).
+//
+// Ping-pong de estados: cuando el EGRESADO responde estando en REQUIERE_INFO, la
+// solicitud pasa automáticamente a EN_REVISION — así la bandeja de la empresa
+// refleja que ya le contestaron sin tener que abrir el hilo.
+func EnviarMensaje(token string, solicitudId int, body map[string]interface{}) (interface{}, error) {
+	estado, estadoId, err := getEstadoActual(token, solicitudId)
 	if err != nil {
 		return nil, err
 	}
-	if estado != estadoRequiereInfo {
-		return nil, fmt.Errorf("solo se pueden enviar mensajes cuando la solicitud está en REQUIERE_INFO")
+	if estado != estadoRequiereInfo && estado != estadoEnRevision {
+		return nil, fmt.Errorf("solo se pueden enviar mensajes mientras la solicitud está en conversación (REQUIERE_INFO o EN_REVISION); estado actual: %s", estado)
 	}
 
+	usuarioId := toInt(body["usuario_id"])
 	payload := map[string]interface{}{
 		"solicitud_beneficio": map[string]interface{}{"id": solicitudId},
-		"usuario":             map[string]interface{}{"id": toInt(body["usuario_id"])},
+		"usuario":             map[string]interface{}{"id": usuarioId},
 		"mensaje":             body["mensaje"],
 	}
 	var result interface{}
-	if err := helpers.PostCRUD("/mensaje_solicitud", payload, &result); err != nil {
+	if err := helpers.PostCRUD(token, "/mensaje_solicitud", payload, &result); err != nil {
 		return nil, err
+	}
+
+	if estado == estadoRequiereInfo && esDelEgresado(token, solicitudId, usuarioId) {
+		if err := registrarCambioEstado(token, solicitudId, estadoId, estadoEnRevision, usuarioId, nil); err != nil {
+			// El mensaje SÍ quedó publicado; se reporta el fallo del estado sin ocultarlo.
+			return result, fmt.Errorf("mensaje enviado, pero no se pudo pasar la solicitud a EN_REVISION: %v", err)
+		}
 	}
 	return result, nil
 }
 
+// esDelEgresado indica si el usuario local es el dueño (egresado) de la solicitud.
+// Best effort: ante cualquier duda devuelve false (no se cambia el estado).
+func esDelEgresado(token string, solicitudId, usuarioId int) bool {
+	if usuarioId <= 0 {
+		return false
+	}
+	var sol map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &sol); err != nil {
+		return false
+	}
+	eg, _ := sol["egresado"].(map[string]interface{})
+	if eg == nil {
+		return false
+	}
+	eid := toInt(firstOf(eg, "id", "Id"))
+	if eid <= 0 {
+		return false
+	}
+	var egresado map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/egresado/%d", eid), &egresado); err != nil {
+		return false
+	}
+	u, _ := egresado["usuario"].(map[string]interface{})
+	return u != nil && toInt(firstOf(u, "id", "Id")) == usuarioId
+}
+
 // GetMensajes retorna el historial de mensajes de una solicitud.
-func GetMensajes(solicitudId int) (interface{}, error) {
+func GetMensajes(token string, solicitudId int) (interface{}, error) {
 	var result interface{}
 	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&limit=0", solicitudId)
-	if err := helpers.GetCRUD(query, &result); err != nil {
+	if err := helpers.GetCRUD(token, query, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -221,11 +378,18 @@ func GetMensajes(solicitudId int) (interface{}, error) {
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
 // transicionValida verifica la máquina de estados de solicitud (RN-005).
+// Ajuste 2026-07-02: se permite PENDIENTE → REQUIERE_INFO y REQUIERE_INFO →
+// APROBADA/RECHAZADA. La versión anterior solo permitía pedir información desde
+// EN_REVISION, pero NINGUNA acción del sistema pone ese estado (ni la UI ni el
+// MID lo emiten): era un estado intermedio inalcanzable que bloqueaba el flujo
+// real de la bandeja (y era incoherente: aprobar/rechazar directo desde
+// PENDIENTE sí estaba permitido). EN_REVISION se conserva en la máquina por si
+// a futuro se implementa la acción "tomar en revisión".
 func transicionValida(actual, nuevo string) bool {
 	maquina := map[string][]string{
-		estadoPendiente:    {estadoEnRevision, estadoAprobada, estadoRechazada, estadoCancelada},
-		estadoEnRevision:   {estadoAprobada, estadoRechazada, estadoRequiereInfo},
-		estadoRequiereInfo: {estadoEnRevision, estadoCancelada},
+		estadoPendiente:    {estadoEnRevision, estadoAprobada, estadoRechazada, estadoRequiereInfo, estadoCancelada},
+		estadoEnRevision:   {estadoAprobada, estadoRechazada, estadoRequiereInfo, estadoCancelada},
+		estadoRequiereInfo: {estadoEnRevision, estadoAprobada, estadoRechazada, estadoCancelada},
 	}
 	permitidos, ok := maquina[actual]
 	if !ok {
@@ -241,16 +405,16 @@ func transicionValida(actual, nuevo string) bool {
 
 // getEstadoActual deriva el estado vigente de una solicitud del último registro
 // del historial (C-4b) y lo traduce a codigo_abreviacion vía el servicio de parámetros.
-func getEstadoActual(solicitudId int) (codigo string, estadoId int, err error) {
+func getEstadoActual(token string, solicitudId int) (codigo string, estadoId int, err error) {
 	var vigente map[string]interface{}
-	if err = helpers.GetCRUD(fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
+	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
 		return "", 0, fmt.Errorf("no se pudo obtener el estado de la solicitud %d: %v", solicitudId, err)
 	}
 	estadoId = toInt(vigente["estado_nuevo_id"])
 	if estadoId == 0 {
 		return "", 0, fmt.Errorf("la solicitud %d no tiene historial de estado", solicitudId)
 	}
-	codigo, err = ResolverParametroCodigo(TipoParamEstadoSolicitud, estadoId)
+	codigo, err = ResolverParametroCodigo(token, TipoParamEstadoSolicitud, estadoId)
 	if err != nil {
 		return "", 0, err
 	}
@@ -258,8 +422,8 @@ func getEstadoActual(solicitudId int) (codigo string, estadoId int, err error) {
 }
 
 // registrarCambioEstado inserta la transición en historial_solicitud (RN-004, C-4b).
-func registrarCambioEstado(solicitudId, estadoAnteriorId int, nuevoEstadoCodigo string, usuarioId, justificacion interface{}) error {
-	nuevoId, err := ResolverParametroId(TipoParamEstadoSolicitud, nuevoEstadoCodigo)
+func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuevoEstadoCodigo string, usuarioId, justificacion interface{}) error {
+	nuevoId, err := ResolverParametroId(token, TipoParamEstadoSolicitud, nuevoEstadoCodigo)
 	if err != nil {
 		return err
 	}
@@ -272,13 +436,82 @@ func registrarCambioEstado(solicitudId, estadoAnteriorId int, nuevoEstadoCodigo 
 	if justificacion != nil {
 		historial["justificacion"] = justificacion
 	}
-	return helpers.PostCRUD("/historial_solicitud", historial, &map[string]interface{}{})
+	return helpers.PostCRUD(token, "/historial_solicitud", historial, &map[string]interface{}{})
+}
+
+// esEstadoNoTerminal indica si una solicitud sigue EN CURSO (cuenta para RN-007/RN-010).
+// Los terminales (APROBADA, RECHAZADA, CANCELADA) no bloquean ni cuentan.
+func esEstadoNoTerminal(codigo string) bool {
+	switch codigo {
+	case estadoPendiente, estadoEnRevision, estadoRequiereInfo:
+		return true
+	}
+	return false
+}
+
+// beneficiosConSolicitudActiva retorna los beneficio_id de las solicitudes EN CURSO
+// (estado vigente no terminal) del egresado. Alimenta RN-007 (única por beneficio) y
+// RN-010 (límite de activas) con una sola consulta.
+// Nota: hace un getEstadoActual por solicitud (N+1); N está acotado por RN-010 (~pocas),
+// pero si crece conviene resolver los ids contra un único fetch de ESTADO_SOLICITUD.
+func beneficiosConSolicitudActiva(token string, egresadoId int) ([]int, error) {
+	var solicitudes []map[string]interface{}
+	q := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
+		return nil, err
+	}
+	var beneficioIds []int
+	for _, s := range solicitudes {
+		codigo, _, err := getEstadoActual(token, toInt(s["id"]))
+		if err != nil {
+			continue // solicitud sin historial: se ignora en el conteo
+		}
+		if esEstadoNoTerminal(codigo) {
+			bid := 0
+			if ben, ok := s["beneficio"].(map[string]interface{}); ok {
+				bid = toInt(firstOf(ben, "id", "Id"))
+			}
+			beneficioIds = append(beneficioIds, bid)
+		}
+	}
+	return beneficioIds, nil
+}
+
+// descontarCupo reserva un cupo del beneficio de forma atómica (RN-002b). Devuelve
+// false si no había cupos (no es error). El descuento real (guard sin race) vive en
+// el CRUD; el MID solo orquesta.
+func descontarCupo(token string, beneficioId int) (bool, error) {
+	var r map[string]interface{}
+	if err := helpers.PostCRUD(token, fmt.Sprintf("/beneficio/%d/cupo/descontar", beneficioId), nil, &r); err != nil {
+		return false, err
+	}
+	return asBool(firstOf(r, "descontado", "Descontado")), nil
+}
+
+// devolverCupo devuelve un cupo al beneficio (RN-002c). Best-effort: un fallo aquí no
+// debe abortar la operación principal (cancelar/rechazar ya ocurrió), solo se ignora;
+// el cupo se puede reconciliar después contra el historial.
+func devolverCupo(token string, beneficioId int) {
+	var r map[string]interface{}
+	_ = helpers.PostCRUD(token, fmt.Sprintf("/beneficio/%d/cupo/devolver", beneficioId), nil, &r)
+}
+
+// getBeneficioIdDeSolicitud obtiene el id del beneficio de una solicitud (para RN-002c).
+func getBeneficioIdDeSolicitud(token string, solicitudId int) (int, error) {
+	var s map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &s); err != nil {
+		return 0, err
+	}
+	if ben, ok := s["beneficio"].(map[string]interface{}); ok {
+		return toInt(firstOf(ben, "id", "Id")), nil
+	}
+	return 0, fmt.Errorf("no se pudo determinar el beneficio de la solicitud %d", solicitudId)
 }
 
 // getLimiteActivas lee el límite de solicitudes activas por egresado (RN-010)
 // del servicio de parámetros (tipo PARAMETRO_SISTEMA).
-func getLimiteActivas() (int, error) {
-	params, err := GetParametrosPorTipo(TipoParamParametroSistema)
+func getLimiteActivas(token string) (int, error) {
+	params, err := GetParametrosPorTipo(token, TipoParamParametroSistema)
 	if err != nil {
 		return 5, nil // valor por defecto si el servicio no está disponible
 	}
@@ -308,4 +541,23 @@ func toInt(v interface{}) int {
 		return i
 	}
 	return 0
+}
+
+func asString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func asBool(v interface{}) bool {
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		return b == "true" || b == "1"
+	case float64:
+		return b != 0
+	}
+	return false
 }
