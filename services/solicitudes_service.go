@@ -255,9 +255,15 @@ func ResponderSolicitud(token string, id int, body map[string]interface{}) error
 		return fmt.Errorf("el comprobante solo se puede adjuntar al aprobar la solicitud")
 	}
 
-	// RN-003: justificación obligatoria al rechazar
-	if nuevoEstado == estadoRechazada && len(justificacion) < 20 {
-		return fmt.Errorf("la justificación debe tener al menos 20 caracteres al rechazar")
+	// RN-003 (ajustada 2026-07-05): la justificación del rechazo es opcional y sin
+	// mínimo de caracteres. Si la empresa no escribe nada, se registra un texto
+	// institucional por defecto ("sin perjuicio": no afecta futuras postulaciones —
+	// coherente con RN-007/RN-010, donde las rechazadas no bloquean ni cuentan).
+	if nuevoEstado == estadoRechazada && strings.TrimSpace(justificacion) == "" {
+		justificacion = "Solicitud rechazada sin perjuicio: la empresa no otorgó el " +
+			"beneficio en esta oportunidad. Esta decisión no afecta tus futuras " +
+			"postulaciones a este u otros beneficios del módulo."
+		body["justificacion"] = justificacion
 	}
 
 	// RN-005: obtener estado vigente del historial y validar transición
@@ -326,6 +332,22 @@ func ResponderSolicitud(token string, id int, body map[string]interface{}) error
 			"usuario_id": body["usuario_id"], "mensaje": justificacion,
 		}); err != nil {
 			return fmt.Errorf("la solicitud pasó a REQUIERE_INFO pero el mensaje no se pudo publicar: %v", err)
+		}
+	}
+
+	// La justificación de aprobar/rechazar CIERRA EL HILO: se publica como último
+	// mensaje de la empresa, por la misma razón (el egresado no ve el historial).
+	// Inserta directo en el CRUD — EnviarMensaje exige estado conversacional y
+	// aquí la solicitud ya quedó en estado terminal.
+	if (nuevoEstado == estadoAprobada || nuevoEstado == estadoRechazada) && strings.TrimSpace(justificacion) != "" {
+		payload := map[string]interface{}{
+			"solicitud_beneficio": map[string]interface{}{"id": id},
+			"usuario":             map[string]interface{}{"id": toInt(body["usuario_id"])},
+			"mensaje":             justificacion,
+		}
+		var mensajeCreado interface{}
+		if err := helpers.PostCRUD(token, "/mensaje_solicitud", payload, &mensajeCreado); err != nil {
+			return fmt.Errorf("la solicitud pasó a %s pero el mensaje de cierre no se pudo publicar: %v", nuevoEstado, err)
 		}
 	}
 	return nil
