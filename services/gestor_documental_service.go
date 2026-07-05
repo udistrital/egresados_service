@@ -15,8 +15,10 @@ import (
 const IdTipoDocumentoBeneficiosEgresados = 167
 
 // respuestaGestorDocumental formato de POST document/uploadAnyFormat del gestor
-// documental institucional (ver gestor_documental_mid.md en memoria): el uid/hash
-// del documento en Nuxeo viaja en res.Enlace.
+// documental institucional. OJO: el servicio responde un ARRAY (un elemento por
+// archivo enviado) — sga_cliente siempre lo lee como responseNux[0].Status /
+// responseNux[0].res (new_nuxeo.service.ts) — y el uid/hash en Nuxeo viaja en
+// res.Enlace.
 type respuestaGestorDocumental struct {
 	Status string `json:"Status"`
 	Res    struct {
@@ -41,6 +43,13 @@ func SubirDocumentoGestor(token, nombre, descripcion, fileBase64 string, metadat
 		return "", fmt.Errorf("el archivo debe ser un PDF válido")
 	}
 
+	// El "nombre" va sin puntos ni extensión: sga_cliente los elimina antes de
+	// enviarlo (new_nuxeo.service.ts, uploadFiles) porque Nuxeo lo usa como título
+	// del documento. El nombre original con extensión se conserva en nuestra BD
+	// (documento_solicitud.nombre_archivo).
+	nombre = strings.TrimSuffix(strings.TrimSuffix(nombre, ".pdf"), ".PDF")
+	nombre = strings.ReplaceAll(nombre, ".", "_")
+
 	payload := []map[string]interface{}{
 		{
 			"IdTipoDocumento": IdTipoDocumentoBeneficiosEgresados,
@@ -51,14 +60,14 @@ func SubirDocumentoGestor(token, nombre, descripcion, fileBase64 string, metadat
 		},
 	}
 
-	var resp respuestaGestorDocumental
+	var resp []respuestaGestorDocumental
 	if err := helpers.PostGestorDocumental(token, "document/uploadAnyFormat", payload, &resp); err != nil {
 		return "", fmt.Errorf("no se pudo subir el documento al gestor documental: %v", err)
 	}
-	if resp.Res.Enlace == "" {
+	if len(resp) == 0 || resp[0].Res.Enlace == "" {
 		return "", fmt.Errorf("el gestor documental no devolvió el enlace del documento")
 	}
-	return resp.Res.Enlace, nil
+	return resp[0].Res.Enlace, nil
 }
 
 // ObtenerDocumentoGestor consulta un documento en el gestor documental por su
