@@ -85,6 +85,23 @@ func (c *BeneficiosController) Publicar() {
 	helpers.Created(&c.Controller, result)
 }
 
+// GetDocumentosRequeridos GET /v1/beneficios/:id/documentos-requeridos
+// Documentos que la empresa exige para postularse (definidos al publicar).
+func (c *BeneficiosController) GetDocumentosRequeridos() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	result, err := services.GetDocumentosRequeridos(c.Ctx.Input.Header("Authorization"), id)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
 // Editar PUT /v1/beneficios/:id
 // Editar beneficio (solo borradores o publicados sin solicitudes activas).
 func (c *BeneficiosController) Editar() {

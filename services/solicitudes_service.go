@@ -190,7 +190,7 @@ func CancelarSolicitud(token string, id int, body map[string]interface{}) error 
 	}
 
 	// C-4b: el cambio de estado ES la inserción en el historial (no hay campo que actualizar)
-	if err := registrarCambioEstado(token, id, estadoId, estadoCancelada, body["usuario_id"], nil); err != nil {
+	if err := registrarCambioEstado(token, id, estadoId, estadoCancelada, body["usuario_id"], nil, "", ""); err != nil {
 		return err
 	}
 	devolverCupo(token, bid) // RN-002c: el cupo vuelve al pool
@@ -239,12 +239,21 @@ func GetResumenEgresado(token string, egresadoId int) (interface{}, error) {
 // RN-002c: devolver cupo si RECHAZADA.
 // RN-004: registrar historial.
 // RN-005: validar máquina de estados.
+// Comprobante (opcional): solo al aprobar, la empresa puede adjuntar un PDF
+// (constancia/cupón) que queda disponible para el egresado.
 func ResponderSolicitud(token string, id int, body map[string]interface{}) error {
 	nuevoEstado, ok := body["estado_nuevo"].(string)
 	if !ok || nuevoEstado == "" {
 		return fmt.Errorf("estado_nuevo es requerido")
 	}
 	justificacion, _ := body["justificacion"].(string)
+
+	// El comprobante es exclusivo de la aprobación: adjuntarlo en cualquier otra
+	// transición no tiene sentido de negocio (rechazo/info no entregan nada).
+	comprobante, _ := body["comprobante"].(map[string]interface{})
+	if comprobante != nil && nuevoEstado != estadoAprobada {
+		return fmt.Errorf("el comprobante solo se puede adjuntar al aprobar la solicitud")
+	}
 
 	// RN-003: justificación obligatoria al rechazar
 	if nuevoEstado == estadoRechazada && len(justificacion) < 20 {
@@ -282,8 +291,27 @@ func ResponderSolicitud(token string, id int, body map[string]interface{}) error
 		}
 	}
 
+	// Comprobante: se sube ANTES de tocar el historial — si el archivo no es un PDF
+	// válido o el gestor documental falla, la aprobación se aborta sin dejar un
+	// estado a medias (el egresado nunca vería "aprobada" sin su comprobante).
+	var nombreComprobante, enlaceComprobante string
+	if comprobante != nil {
+		nombreComprobante, _ = comprobante["nombre_archivo"].(string)
+		fileBase64, _ := comprobante["file"].(string)
+		if nombreComprobante == "" || fileBase64 == "" {
+			return fmt.Errorf("el comprobante requiere nombre_archivo y file")
+		}
+		enlace, err := SubirDocumentoGestor(token, nombreComprobante, "Comprobante de aprobación de beneficio", fileBase64, map[string]interface{}{
+			"solicitud_beneficio_id": id,
+		})
+		if err != nil {
+			return fmt.Errorf("no se pudo adjuntar el comprobante: %v", err)
+		}
+		enlaceComprobante = enlace
+	}
+
 	// RN-004 / C-4b: insertar en historial (única fuente de estado)
-	if err := registrarCambioEstado(token, id, estadoActualId, nuevoEstado, body["usuario_id"], body["justificacion"]); err != nil {
+	if err := registrarCambioEstado(token, id, estadoActualId, nuevoEstado, body["usuario_id"], body["justificacion"], nombreComprobante, enlaceComprobante); err != nil {
 		return err
 	}
 	if nuevoEstado == estadoRechazada {
@@ -331,7 +359,7 @@ func EnviarMensaje(token string, solicitudId int, body map[string]interface{}) (
 	}
 
 	if estado == estadoRequiereInfo && esDelEgresado(token, solicitudId, usuarioId) {
-		if err := registrarCambioEstado(token, solicitudId, estadoId, estadoEnRevision, usuarioId, nil); err != nil {
+		if err := registrarCambioEstado(token, solicitudId, estadoId, estadoEnRevision, usuarioId, nil, "", ""); err != nil {
 			// El mensaje SÍ quedó publicado; se reporta el fallo del estado sin ocultarlo.
 			return result, fmt.Errorf("mensaje enviado, pero no se pudo pasar la solicitud a EN_REVISION: %v", err)
 		}
@@ -422,7 +450,9 @@ func getEstadoActual(token string, solicitudId int) (codigo string, estadoId int
 }
 
 // registrarCambioEstado inserta la transición en historial_solicitud (RN-004, C-4b).
-func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuevoEstadoCodigo string, usuarioId, justificacion interface{}) error {
+// nombreComprobante/enlaceComprobante van vacíos salvo en la aprobación con
+// comprobante adjunto (ResponderSolicitud ya subió el archivo antes de llamar aquí).
+func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuevoEstadoCodigo string, usuarioId, justificacion interface{}, nombreComprobante, enlaceComprobante string) error {
 	nuevoId, err := ResolverParametroId(token, TipoParamEstadoSolicitud, nuevoEstadoCodigo)
 	if err != nil {
 		return err
@@ -436,7 +466,24 @@ func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuev
 	if justificacion != nil {
 		historial["justificacion"] = justificacion
 	}
+	if enlaceComprobante != "" {
+		historial["nombre_archivo_comprobante"] = nombreComprobante
+		historial["enlace_comprobante"] = enlaceComprobante
+	}
 	return helpers.PostCRUD(token, "/historial_solicitud", historial, &map[string]interface{}{})
+}
+
+// getComprobanteDeSolicitud lee el comprobante (opcional) que la empresa adjuntó al
+// aprobar, desde el registro vigente de historial_solicitud. Vacíos ("", "") si no
+// hay comprobante (no es error: es opcional).
+func getComprobanteDeSolicitud(token string, solicitudId int) (nombreArchivo, enlace string, err error) {
+	var vigente map[string]interface{}
+	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
+		return "", "", fmt.Errorf("no se pudo obtener el estado de la solicitud %d: %v", solicitudId, err)
+	}
+	nombreArchivo = asString(firstOf(vigente, "nombre_archivo_comprobante", "NombreArchivoComprobante"))
+	enlace = asString(firstOf(vigente, "enlace_comprobante", "EnlaceComprobante"))
+	return nombreArchivo, enlace, nil
 }
 
 // esEstadoNoTerminal indica si una solicitud sigue EN CURSO (cuenta para RN-007/RN-010).

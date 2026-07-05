@@ -144,3 +144,126 @@ func (c *SolicitudesController) GetMensajes() {
 	}
 	helpers.Ok(&c.Controller, result)
 }
+
+// GetDocumentos GET /v1/solicitudes/:id/documentos
+// Documentos requeridos del beneficio vs. subidos por el egresado (merge), para
+// que tanto el egresado (qué le falta) como la empresa (qué revisar) vean lo mismo.
+func (c *SolicitudesController) GetDocumentos() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	result, err := services.GetDocumentosDeSolicitud(c.Ctx.Input.Header("Authorization"), id)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
+// SubirDocumento POST /v1/solicitudes/:id/documentos
+// El egresado sube (o reemplaza) el PDF de un documento requerido. Body:
+// { documento_requerido_id, nombre_archivo, file (base64, PDF) }.
+func (c *SolicitudesController) SubirDocumento() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
+		return
+	}
+
+	result, err := services.SubirDocumentoSolicitud(c.Ctx.Input.Header("Authorization"), id, body)
+	if err != nil {
+		helpers.UnprocessableEntity(&c.Controller, err.Error())
+		return
+	}
+	helpers.Created(&c.Controller, result)
+}
+
+// EliminarDocumento DELETE /v1/solicitudes/:id/documentos/:doc_id
+// El egresado quita un documento que había subido.
+func (c *SolicitudesController) EliminarDocumento() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+	docId, err := c.GetInt(":doc_id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "doc_id inválido")
+		return
+	}
+
+	if err := services.EliminarDocumentoSolicitud(c.Ctx.Input.Header("Authorization"), id, docId); err != nil {
+		helpers.UnprocessableEntity(&c.Controller, err.Error())
+		return
+	}
+	helpers.Ok(&c.Controller, "documento eliminado")
+}
+
+// ComentarDocumento PUT /v1/documentos/:doc_id/comentario
+// La empresa deja una observación sobre un documento subido por el egresado.
+// Body: { comentario }.
+func (c *SolicitudesController) ComentarDocumento() {
+	docId, err := c.GetInt(":doc_id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "doc_id inválido")
+		return
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
+		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
+		return
+	}
+	comentario, _ := body["comentario"].(string)
+
+	if err := services.ComentarDocumento(c.Ctx.Input.Header("Authorization"), docId, comentario); err != nil {
+		helpers.UnprocessableEntity(&c.Controller, err.Error())
+		return
+	}
+	helpers.Ok(&c.Controller, "comentario guardado")
+}
+
+// GetComprobante GET /v1/solicitudes/:id/comprobante
+// Comprobante opcional que la empresa adjuntó al aprobar. { tiene_comprobante,
+// nombre_archivo?, file? (base64) }.
+func (c *SolicitudesController) GetComprobante() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	result, err := services.GetComprobanteSolicitud(c.Ctx.Input.Header("Authorization"), id)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
+// GetArchivoDocumento GET /v1/documentos/:doc_id/archivo
+// Proxy de solo lectura hacia el gestor documental: el cliente nunca llama a ese
+// servicio directamente. Devuelve { nombre_archivo, file (base64) }.
+func (c *SolicitudesController) GetArchivoDocumento() {
+	docId, err := c.GetInt(":doc_id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "doc_id inválido")
+		return
+	}
+
+	result, err := services.GetArchivoDocumento(c.Ctx.Input.Header("Authorization"), docId)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}

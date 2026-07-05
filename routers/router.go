@@ -31,6 +31,23 @@ func init() {
 	web.Router("/v1/solicitudes/:id/responder", &controllers.SolicitudesController{}, "put:Responder")
 	web.Router("/v1/solicitudes/:id/mensajes", &controllers.SolicitudesController{}, "post:EnviarMensaje;get:GetMensajes")
 
+	// ── Documentos requeridos / subidos (gestor_documental_mid, IdTipoDocumento=167) ──
+	// GET    /v1/beneficios/:id/documentos-requeridos   qué documentos exige la empresa
+	// GET    /v1/solicitudes/:id/documentos             requeridos vs. subidos (egresado y empresa)
+	// POST   /v1/solicitudes/:id/documentos             el egresado sube/reemplaza un PDF
+	// DELETE /v1/solicitudes/:id/documentos/:doc_id     el egresado quita un documento
+	// PUT    /v1/documentos/:doc_id/comentario          la empresa comenta un documento
+	// GET    /v1/documentos/:doc_id/archivo             ver/descargar (proxy de solo lectura)
+	web.Router("/v1/beneficios/:id/documentos-requeridos", &controllers.BeneficiosController{}, "get:GetDocumentosRequeridos")
+	web.Router("/v1/solicitudes/:id/documentos", &controllers.SolicitudesController{}, "get:GetDocumentos;post:SubirDocumento")
+	web.Router("/v1/solicitudes/:id/documentos/:doc_id", &controllers.SolicitudesController{}, "delete:EliminarDocumento")
+	web.Router("/v1/documentos/:doc_id/comentario", &controllers.SolicitudesController{}, "put:ComentarDocumento")
+	web.Router("/v1/documentos/:doc_id/archivo", &controllers.SolicitudesController{}, "get:GetArchivoDocumento")
+
+	// GET /v1/solicitudes/:id/comprobante — comprobante OPCIONAL que la empresa
+	// adjunta al aprobar (ver PUT /solicitudes/:id/responder, body.comprobante)
+	web.Router("/v1/solicitudes/:id/comprobante", &controllers.SolicitudesController{}, "get:GetComprobante")
+
 	// ── Egresados ─────────────────────────────────────────────────────────────
 	// POST /v1/egresados/provision                 C-2a JIT provisioning al login
 	web.Router("/v1/egresados/provision", &controllers.EgresadosController{}, "post:Provisionar")

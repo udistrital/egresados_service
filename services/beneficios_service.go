@@ -45,7 +45,8 @@ func GetCatalogoBeneficios(token string, page, limit, categoriaId, empresaId int
 }
 
 // GetBeneficioDetalle devuelve el detalle de un beneficio por id, con el total
-// histórico de solicitudes ("N egresados ya lo solicitaron", social proof del detalle).
+// histórico de solicitudes ("N egresados ya lo solicitaron", social proof del detalle)
+// y los documentos que la empresa exige para postularse.
 func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 	var result map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/beneficio/%d", id), &result); err != nil {
@@ -57,7 +58,24 @@ func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 	if err := helpers.GetCRUD(token, q, &solicitudes); err == nil {
 		result["total_solicitudes"] = len(solicitudes)
 	}
+	// Best-effort: si el gestor de documentos requeridos falla, el detalle sale sin ellos.
+	if documentos, err := GetDocumentosRequeridos(token, id); err == nil {
+		result["documentos_requeridos"] = documentos
+	}
 	return result, nil
+}
+
+// GetDocumentosRequeridos lista los documentos que la empresa exige para postularse
+// a un beneficio (definidos al publicar, RF-005/documentos). Usado tanto por el
+// detalle del catálogo (egresado, antes de postularse) como por el merge de
+// GetDocumentosDeSolicitud (egresado/empresa, después de postularse).
+func GetDocumentosRequeridos(token string, beneficioId int) ([]map[string]interface{}, error) {
+	var documentos []map[string]interface{}
+	q := fmt.Sprintf("/documento_requerido_beneficio?query=Beneficio.Id:%d,Activo:true&limit=0", beneficioId)
+	if err := helpers.GetCRUD(token, q, &documentos); err != nil {
+		return nil, err
+	}
+	return documentos, nil
 }
 
 // GetBeneficiosDeEmpresa lista TODOS los beneficios de una empresa — es la vista
@@ -144,10 +162,42 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 	// cupos_disponibles = cupos_total al publicar
 	body["cupos_disponibles"] = body["cupos_total"]
 
-	var result interface{}
+	// documentos_requeridos (opcional): se crean aparte, no son columnas de beneficio.
+	documentosRequeridos, _ := body["documentos_requeridos"].([]interface{})
+	delete(body, "documentos_requeridos")
+
+	var result map[string]interface{}
 	if err := helpers.PostCRUD(token, "/beneficio", body, &result); err != nil {
 		return nil, err
 	}
+
+	if len(documentosRequeridos) > 0 {
+		beneficioId := toInt(result["id"])
+		for _, d := range documentosRequeridos {
+			doc, ok := d.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			nombre, _ := doc["nombre"].(string)
+			if strings.TrimSpace(nombre) == "" {
+				continue // fila vacía del formulario: se ignora, no es un error
+			}
+			descripcion, _ := doc["descripcion"].(string)
+			payload := map[string]interface{}{
+				"beneficio":   map[string]interface{}{"id": beneficioId},
+				"nombre":      nombre,
+				"descripcion": descripcion,
+			}
+			var docResult interface{}
+			if err := helpers.PostCRUD(token, "/documento_requerido_beneficio", payload, &docResult); err != nil {
+				// El beneficio YA se creó; un documento requerido que falla no debe
+				// revertirlo (no hay cupo ni radicado en juego aquí). Se reporta el
+				// error para que la empresa sepa que ese documento no quedó registrado.
+				return nil, fmt.Errorf("beneficio creado pero no se pudo registrar el documento requerido %q: %v", nombre, err)
+			}
+		}
+	}
+
 	return result, nil
 }
 

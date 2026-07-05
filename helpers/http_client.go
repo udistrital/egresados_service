@@ -23,6 +23,9 @@ var (
 	tercerosURL = getEnv("BENEFICIOS_EGRESADOS_MID_TERCEROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/terceros_crud/v1")
 	// consultar_persona (C-2a) vive en sga_mid/v1, NO en derecho_pecunario_mid.
 	sgaMidURL = getEnv("BENEFICIOS_EGRESADOS_MID_SGA_MID_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/sga_mid/v1")
+	// Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de las
+	// solicitudes. El cliente Angular nunca llama a este servicio directamente, solo el MID.
+	gestorDocumentalURL = getEnv("BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/gestor_documental_mid/v1")
 )
 
 func getEnv(key, fallback string) string {
@@ -121,6 +124,18 @@ func PutCRUD(token, path string, payload interface{}) error {
 	return nil
 }
 
+// DeleteCRUD realiza un DELETE al CRUD (borrado lógico: el CRUD pone Activo=false).
+func DeleteCRUD(token, path string) error {
+	body, status, err := doRequest(http.MethodDelete, token, fmt.Sprintf("%s%s", crudURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("CRUD respondió %d: %s", status, string(body))
+	}
+	return nil
+}
+
 // AuthURL devuelve la URL base del servicio de autenticación.
 func AuthURL() string { return authURL }
 
@@ -202,4 +217,43 @@ func GetParametros(token, path string, dest interface{}) error {
 		return fmt.Errorf("servicio de parámetros respondió %d: %s", status, string(body))
 	}
 	return json.Unmarshal(body, dest)
+}
+
+// PostGestorDocumental realiza un POST al gestor documental institucional
+// (subida de archivos) y decodifica la respuesta en dest.
+func PostGestorDocumental(token, path string, payload interface{}, dest interface{}) error {
+	body, status, err := doRequest(http.MethodPost, token, fmt.Sprintf("%s%s", gestorDocumentalURL, path), payload)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("gestor_documental_mid respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetGestorDocumental realiza un GET al gestor documental institucional
+// (consultar un documento por su uid/Enlace) y decodifica la respuesta en dest.
+func GetGestorDocumental(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", gestorDocumentalURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("gestor_documental_mid respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// DeleteGestorDocumental realiza un DELETE al gestor documental institucional
+// (borrado lógico del documento en Nuxeo, ver gestor_documental_mid.md en memoria).
+func DeleteGestorDocumental(token, path string) error {
+	body, status, err := doRequest(http.MethodDelete, token, fmt.Sprintf("%s%s", gestorDocumentalURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("gestor_documental_mid respondió %d: %s", status, string(body))
+	}
+	return nil
 }
