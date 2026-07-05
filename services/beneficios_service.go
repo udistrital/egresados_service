@@ -159,6 +159,9 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 		}
 	}
 
+	// El beneficio nace PUBLICADO → fecha_publicacion es ahora (el cliente no la manda)
+	body["fecha_publicacion"] = time.Now().UTC().Format(time.RFC3339)
+
 	// cupos_disponibles = cupos_total al publicar
 	body["cupos_disponibles"] = body["cupos_total"]
 
