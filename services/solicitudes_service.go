@@ -583,7 +583,7 @@ func getLimiteActivas(token string) (int, error) {
 		return 5, nil // valor por defecto si el servicio no está disponible
 	}
 	for _, p := range params {
-		if firstOf(p, "CodigoAbreviacion", "codigo_abreviacion") == "LIMITE_SOLICITUDES_ACTIVAS_EGRESADO" {
+		if firstOf(p, "CodigoAbreviacion", "codigo_abreviacion") == "LIMITE_SOLIC_ACTIVAS" {
 			switch valor := firstOf(p, "Valor", "valor").(type) {
 			case string:
 				if v, err := strconv.Atoi(valor); err == nil {

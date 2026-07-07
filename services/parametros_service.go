@@ -50,9 +50,9 @@ var parametrosSeed = map[string][]map[string]interface{}{
 		{"Id": 52, "CodigoAbreviacion": "OTR", "Nombre": "Otro"},
 	},
 	TipoParamParametroSistema: {
-		{"Id": 60, "CodigoAbreviacion": "LIMITE_SOLICITUDES_ACTIVAS_EGRESADO", "Nombre": "Límite solicitudes activas", "Valor": "5"},
-		{"Id": 61, "CodigoAbreviacion": "PAGINACION_CATALOGO_DEFAULT", "Nombre": "Paginación catálogo", "Valor": "20"},
-		{"Id": 62, "CodigoAbreviacion": "JUSTIFICACION_RECHAZO_MIN_CARACTERES", "Nombre": "Mínimo justificación rechazo", "Valor": "20"},
+		{"Id": 60, "CodigoAbreviacion": "LIMITE_SOLIC_ACTIVAS", "Nombre": "Límite solicitudes activas", "Valor": "5"},
+		{"Id": 61, "CodigoAbreviacion": "PAGINACION_DEFAULT", "Nombre": "Paginación catálogo", "Valor": "20"},
+		{"Id": 62, "CodigoAbreviacion": "JUSTIF_RECHAZO_MIN", "Nombre": "Mínimo justificación rechazo", "Valor": "20"},
 	},
 }
 
