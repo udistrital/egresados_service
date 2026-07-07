@@ -110,11 +110,7 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 		}
 	}
 
-	metadatos := map[string]interface{}{
-		"solicitud_beneficio_id": solicitudId,
-		"documento_requerido_id": documentoRequeridoId,
-	}
-	enlace, err := SubirDocumentoGestor(token, nombreArchivo, "Documento de solicitud de beneficio para egresados", fileBase64, metadatos)
+	enlace, err := SubirDocumentoGestor(token, nombreArchivo, "Documento de solicitud de beneficio para egresados", fileBase64)
 	if err != nil {
 		return nil, err
 	}

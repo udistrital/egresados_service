@@ -307,9 +307,7 @@ func ResponderSolicitud(token string, id int, body map[string]interface{}) error
 		if nombreComprobante == "" || fileBase64 == "" {
 			return fmt.Errorf("el comprobante requiere nombre_archivo y file")
 		}
-		enlace, err := SubirDocumentoGestor(token, nombreComprobante, "Comprobante de aprobación de beneficio", fileBase64, map[string]interface{}{
-			"solicitud_beneficio_id": id,
-		})
+		enlace, err := SubirDocumentoGestor(token, nombreComprobante, "Comprobante de aprobación de beneficio", fileBase64)
 		if err != nil {
 			return fmt.Errorf("no se pudo adjuntar el comprobante: %v", err)
 		}
