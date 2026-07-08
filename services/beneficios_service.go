@@ -124,12 +124,10 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 	}
 
 	// Verificar que la empresa esté ACTIVA (estado_empresa_id → parámetro)
-	// Verificar que la empresa esté ACTIVA (estado_empresa_id → parámetro)
 	var empresa map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/empresa/%d", empresaId), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa no encontrada")
 	}
-	activaId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "ACTIVA")
 	activaId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "ACTIVA")
 	if err != nil {
 		return nil, err
