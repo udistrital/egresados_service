@@ -21,15 +21,15 @@ Capas hermanas:
 
 - **Catálogos (C-1):** `services/parametros_service.go` centraliza el acceso al
   servicio institucional de parámetros (`GetParametrosPorTipo`, `ResolverParametroId`,
-  `ResolverParametroCodigo`). Tipos usados: `TIPO_USUARIO`, `ESTADO_EMPRESA`,
-  `ESTADO_BENEFICIO`, `ESTADO_SOLICITUD`, `CATEGORIA_BENEFICIO`, `SECTOR_ECONOMICO`,
-  `PARAMETRO_SISTEMA`.
+  `ResolverParametroCodigo`). Tipos usados: `ESTADO_EMPRESA`, `ESTADO_BENEFICIO`,
+  `ESTADO_SOLICITUD`, `CATEGORIA_BENEFICIO`, `SECTOR_ECONOMICO`, `PARAMETRO_SISTEMA`
+  (creados en el servicio institucional el 2026-07-07, área EGR).
 - **Estado de solicitudes (C-4b):** el estado vigente se deriva del historial
   (`GET /historial_solicitud/solicitud/:id/vigente` del CRUD); la máquina de estados
   (RN-005) valida transiciones y cada cambio es un INSERT en el historial.
-- **Radicados:** `POST /secuencia_radicado/siguiente/:anio` del CRUD; si la
-  secuencia no responde, la creación falla explícitamente (sin radicados fantasma).
-  Formato `BNF-YYYY-NNNNNN`.
+- **Radicados:** los genera la base de datos al insertar la solicitud
+  (`fn_siguiente_radicado()`, C-5); el MID no envía radicado y lo devuelve leído
+  de la solicitud creada. Formato `BNF-YYYY-NNNNNN`.
 - **Catálogo de beneficios (RN-008):** solo PUBLICADO, `fecha_fin >= hoy`,
   `cupos_disponibles > 0`; filtros por categoría/empresa y búsqueda por título,
   todo delegado al CRUD vía `query=`.
@@ -43,7 +43,7 @@ Capas hermanas:
 | `BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1` | autenticacion_mid (userRol) |
 | `BENEFICIOS_EGRESADOS_MID_AMAZON_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1` | Datos de proveedor/empresa (C-2b) |
 | `BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/gestor_documental_mid/v1` | Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de solicitudes. El cliente Angular nunca lo llama directo, solo el MID (`IdTipoDocumento=167` fijo) |
-| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Dev local**: si `true`, resuelve los parámetros (estados, categorías…) desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. Los ids del seed deben coincidir con los insertados en la BD de desarrollo (PUBLICADO=21, ACTIVA empresa=10, categorías 40-45, etc.). |
+| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Solo dev/offline**: si `true`, resuelve los parámetros desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. El seed local usa los MISMOS ids institucionales (7199+), así que modo local y real son intercambiables. |
 | `BENEFICIOS_EGRESADOS_MID_PORT` | `8080` | Puerto HTTP (en desarrollo local se usa `8081` para no chocar con el CRUD) |
 | `BENEFICIOS_EGRESADOS_MID_RUNMODE` | `dev` | Modo de ejecución de Beego |
 
@@ -60,20 +60,25 @@ go run .
 ```
 # Egresado
 GET  /beneficios                              catálogo (page, limit, categoria_id, empresa_id, q)
-GET  /beneficios/:id                          detalle
+GET  /beneficios/:id                          detalle (+ total_solicitudes)
+POST /egresados/provision                     JIT provisioning al login (identidad del token, sin body)
 POST /solicitudes                             crear solicitud (radicado + estado PENDIENTE)
 GET  /solicitudes/egresado/:egresado_id       mis solicitudes (con estado vigente)
 GET  /solicitudes/egresado/:egresado_id/resumen
-PUT  /solicitudes/:id/cancelar                RN-005: solo PENDIENTE/REQUIERE_INFO
+GET  /solicitudes/:id/historial               bitácora de estados (C-4b)
+PUT  /solicitudes/:id/cancelar                RN-005: solo estados en curso; devuelve cupo
 
 # Empresa
-POST /empresas/provision                      JIT provisioning al login (C-2b/c): {email}
+POST /empresas/provision                      JIT provisioning al login (identidad del token, sin body)
+GET  /empresas/:id                            perfil público (whitelist RNF-002b + métricas)
 GET  /usuarios/:usuario_id/empresas           selector multiempresa (caso 1:N)
 GET  /empresas/:empresa_id/solicitudes        bandeja (datos mínimos del egresado, RNF-002b)
 POST /empresas/:empresa_id/beneficios         publicar beneficio (RN-008b, empresa ACTIVA)
-PUT  /beneficios/:id                          editar beneficio
+GET  /empresas/:empresa_id/beneficios         gestión del dueño (todos los estados + métricas)
+PUT  /beneficios/:id                          editar beneficio (RN-008b de edición)
+PUT  /beneficios/:id/retirar                  retirar beneficio (→ RETIRADO)
 PUT  /solicitudes/:id/responder               aprobar / rechazar / requerir info
-POST /solicitudes/:id/mensajes                mensajes (REQUIERE_INFO)
+POST /solicitudes/:id/mensajes                mensajes (REQUIERE_INFO / EN_REVISION)
 GET  /solicitudes/:id/mensajes
 
 # Admin / catálogos
@@ -116,19 +121,27 @@ el cambio de estado; si el comprobante falla al subirse, la aprobación se abort
 `documento_solicitud`. El egresado lo consulta con `GET /solicitudes/:id/comprobante`. Adjuntar un
 comprobante en cualquier transición que no sea APROBADA es un error (400).
 
-## Pendientes conocidos
+## Estado y seguridad
 
-- RN-007 (solicitud única en curso por egresado+beneficio) y RN-010 (límite de
-  activas): HECHO — validan en `CrearSolicitud` con `beneficiosConSolicitudActiva`
-  (cuenta solo estados no terminales); rechazan antes de reservar el cupo.
-- RN-002b/c (descuento/devolución atómica de cupos): HECHO — CRUD expone
-  `POST /beneficio/:id/cupo/descontar|devolver` (UPDATE atómico con guard); el MID
-  reserva al crear la solicitud (con compensación) y devuelve al cancelar/rechazar.
-- JIT provisioning: **empresa hecho** (`POST /empresas/provision`, C-2b/c); falta el
-  de egresado (`usuario`/`egresado` al primer login).
-- Validación del JWT de WSO2 (`utils_oas`) en cada request. **De esto depende que el
-  JIT de empresa reciba el email desde un token validado y no del body** (ver
-  `ProvisionarEmpresa`).
+- Reglas de negocio del núcleo implementadas: RN-002b/c (cupos atómicos con
+  compensación), RN-003, RN-004/RN-005 (máquina de estados sobre historial),
+  RN-007, RN-008/RN-008b, RN-010.
+- JIT provisioning de **ambos perfiles** (`POST /egresados/provision` y
+  `POST /empresas/provision`); la identidad SIEMPRE se deriva del token
+  (OIDC userinfo), nunca del body.
+- Validación del token entrante en `/v1/*` (`middleware/jwt.go`): JWT por firma
+  RS256 contra el JWKS de WSO2; tokens opacos contra userinfo (401 si inválido).
+- Autorización por recurso (`services/autorizacion_service.go`): cada operación
+  verifica el vínculo del usuario del token con el recurso (403 si es ajeno).
+- Pendientes: ver `specs/logica-negocio/tasks.md`.
+
+## Documentación (SDD)
+
+- `specs/system/` — especificaciones **transversales a los tres repos**:
+  visión general, autenticación/identidad y catálogos institucionales. Este
+  repo es su dueño; los otros dos enlazan hacia aquí.
+- `specs/logica-negocio/` — spec, plan y tareas de esta API.
+- `docs/` — referencias de apoyo (Ágora, parámetros, servicios del ecosistema).
 
 ## Contexto
 
