@@ -66,6 +66,8 @@ func init() {
 	web.Router("/v1/usuarios/:usuario_id/empresas", &controllers.EmpresasController{}, "get:GetEmpresasDeUsuario")
 	web.Router("/v1/empresas/:empresa_id/beneficios", &controllers.BeneficiosController{}, "post:Publicar;get:GetByEmpresa")
 	web.Router("/v1/beneficios/:id", &controllers.BeneficiosController{}, "put:Editar")
+	// PUT /v1/beneficios/:id/retirar             RF-005 retirar ("cerrar") beneficio
+	web.Router("/v1/beneficios/:id/retirar", &controllers.BeneficiosController{}, "put:Retirar")
 
 	// ── Administrador ─────────────────────────────────────────────────────────
 	web.Router("/v1/empresas/:id/suspender", &controllers.AdminController{}, "put:SuspenderEmpresa")

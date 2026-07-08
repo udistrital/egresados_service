@@ -141,3 +141,25 @@ func (c *BeneficiosController) Editar() {
 	}
 	helpers.Ok(&c.Controller, "beneficio actualizado")
 }
+
+// Retirar PUT /v1/beneficios/:id/retirar
+// El "cerrar" de la empresa: pasa el beneficio a RETIRADO (sale del catálogo).
+func (c *BeneficiosController) Retirar() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoBeneficio(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	if err := services.RetirarBeneficio(token, id); err != nil {
+		helpers.UnprocessableEntity(&c.Controller, err.Error())
+		return
+	}
+	helpers.Ok(&c.Controller, "beneficio retirado")
+}

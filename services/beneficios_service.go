@@ -204,8 +204,113 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 	return result, nil
 }
 
-// EditarBeneficio edita un beneficio existente (solo BORRADOR o PUBLICADO sin solicitudes activas).
+// EditarBeneficio edita el CONTENIDO de un beneficio (RF-005). Regla: solo BORRADOR,
+// o PUBLICADO sin solicitudes en curso — editar condiciones con postulaciones activas
+// sería cambiar las reglas a mitad de camino. El estado NO se cambia por aquí
+// (retirar tiene endpoint propio) y empresa/usuario_creador no cambian de dueño.
 func EditarBeneficio(token string, id int, body map[string]interface{}) error {
-	// TODO: verificar que el beneficio sea BORRADOR o PUBLICADO sin solicitudes activas
-	return helpers.PutCRUD(token, fmt.Sprintf("/beneficio/%d", id), body)
+	ben, err := getBeneficioBase(token, id)
+	if err != nil {
+		return err
+	}
+	estado, err := ResolverParametroCodigo(token, TipoParamEstadoBeneficio, toInt(ben["estado_beneficio_id"]))
+	if err != nil {
+		return err
+	}
+	switch estado {
+	case "BORRADOR":
+		// editable siempre
+	case "PUBLICADO":
+		activas, err := beneficioTieneSolicitudesActivas(token, id)
+		if err != nil {
+			return err
+		}
+		if activas {
+			return fmt.Errorf("el beneficio tiene solicitudes en curso; respóndelas antes de editarlo o retíralo")
+		}
+	default:
+		return fmt.Errorf("solo se puede editar un beneficio en BORRADOR o PUBLICADO (estado actual: %s)", estado)
+	}
+
+	// Whitelist de campos editables sobre el objeto completo (el PUT del CRUD
+	// escribe todas las columnas; ver getBeneficioBase).
+	cuposAntes := toInt(ben["cupos_total"])
+	for _, campo := range []string{"titulo", "descripcion", "condiciones", "categoria_beneficio_id", "fecha_inicio", "fecha_fin", "cupos_total", "imagen_url"} {
+		if v, ok := body[campo]; ok && v != nil && v != "" {
+			ben[campo] = v
+		}
+	}
+	// Normalizar fechas: "2026-06-01" → "2026-06-01T00:00:00Z" (mismo idioma que publicar)
+	for _, campo := range []string{"fecha_inicio", "fecha_fin"} {
+		if v, ok := ben[campo].(string); ok && !strings.Contains(v, "T") {
+			ben[campo] = v + "T00:00:00Z"
+		}
+	}
+	// Si cambia el total de cupos, los disponibles se mueven con el mismo delta
+	// (lo ya consumido se respeta); nunca por debajo de 0.
+	if delta := toInt(ben["cupos_total"]) - cuposAntes; delta != 0 {
+		disponibles := toInt(ben["cupos_disponibles"]) + delta
+		if disponibles < 0 {
+			disponibles = 0
+		}
+		ben["cupos_disponibles"] = disponibles
+	}
+	return helpers.PutCRUD(token, fmt.Sprintf("/beneficio/%d", id), ben)
+}
+
+// RetirarBeneficio pasa el beneficio a RETIRADO (el "cerrar" de la empresa): sale del
+// catálogo y no acepta nuevas solicitudes. Se permite desde cualquier estado no
+// retirado. Las solicitudes EN CURSO no se tocan (la empresa las sigue respondiendo
+// desde la bandeja) y los cupos no se devuelven: el beneficio deja de ser solicitable,
+// así que no hay carrera por ellos.
+func RetirarBeneficio(token string, id int) error {
+	ben, err := getBeneficioBase(token, id)
+	if err != nil {
+		return err
+	}
+	retiradoId, err := ResolverParametroId(token, TipoParamEstadoBeneficio, "RETIRADO")
+	if err != nil {
+		return err
+	}
+	if toInt(ben["estado_beneficio_id"]) == retiradoId {
+		return fmt.Errorf("el beneficio ya está retirado")
+	}
+	ben["estado_beneficio_id"] = retiradoId
+	return helpers.PutCRUD(token, fmt.Sprintf("/beneficio/%d", id), ben)
+}
+
+// getBeneficioBase obtiene el beneficio del CRUD listo para un PUT completo:
+// las relaciones se normalizan a {id} (el PUT del CRUD escribe todas las columnas).
+func getBeneficioBase(token string, id int) (map[string]interface{}, error) {
+	var ben map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/beneficio/%d", id), &ben); err != nil {
+		return nil, fmt.Errorf("beneficio %d no encontrado", id)
+	}
+	for _, rel := range []string{"empresa", "usuario_creador"} {
+		if m, ok := ben[rel].(map[string]interface{}); ok {
+			ben[rel] = map[string]interface{}{"id": toInt(firstOf(m, "id", "Id"))}
+		}
+	}
+	return ben, nil
+}
+
+// beneficioTieneSolicitudesActivas indica si el beneficio tiene solicitudes con estado
+// vigente NO terminal (PENDIENTE/EN_REVISION/REQUIERE_INFO). N+1 de getEstadoActual,
+// mismo caveat que RN-007/010.
+func beneficioTieneSolicitudesActivas(token string, beneficioId int) (bool, error) {
+	var solicitudes []map[string]interface{}
+	q := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", beneficioId)
+	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
+		return false, err
+	}
+	for _, s := range solicitudes {
+		codigo, _, err := getEstadoActual(token, toInt(firstOf(s, "id", "Id")))
+		if err != nil {
+			continue // sin historial legible: no bloquea la edición
+		}
+		if codigo == estadoPendiente || codigo == estadoEnRevision || codigo == estadoRequiereInfo {
+			return true, nil
+		}
+	}
+	return false, nil
 }
