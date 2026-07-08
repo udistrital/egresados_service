@@ -113,7 +113,7 @@ func GetBeneficiosDeEmpresa(token string, empresaId int) (interface{}, error) {
 }
 
 // PublicarBeneficio valida RN-008b y crea el beneficio en el CRUD.
-// Solo permite publicar si la empresa está en estado APROBADA.
+// Solo permite publicar si la empresa está en estado ACTIVA.
 func PublicarBeneficio(token string, empresaId int, body map[string]interface{}) (interface{}, error) {
 	// RN-008b: validar campos obligatorios
 	required := []string{"titulo", "descripcion", "condiciones", "categoria_beneficio_id", "fecha_inicio", "fecha_fin", "cupos_total"}
@@ -123,17 +123,17 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 		}
 	}
 
-	// Verificar que la empresa esté APROBADA (estado_empresa_id → parámetro)
+	// Verificar que la empresa esté ACTIVA (estado_empresa_id → parámetro)
 	var empresa map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/empresa/%d", empresaId), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa no encontrada")
 	}
-	aprobadaId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "APROBADA")
+	activaId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "ACTIVA")
 	if err != nil {
 		return nil, err
 	}
-	if toInt(empresa["estado_empresa_id"]) != aprobadaId {
-		return nil, fmt.Errorf("la empresa debe estar APROBADA para publicar beneficios")
+	if toInt(empresa["estado_empresa_id"]) != activaId {
+		return nil, fmt.Errorf("la empresa debe estar ACTIVA para publicar beneficios")
 	}
 
 	// Resolver id del estado PUBLICADO (servicio de parámetros, C-1)

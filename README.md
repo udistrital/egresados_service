@@ -43,7 +43,7 @@ Capas hermanas:
 | `BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1` | autenticacion_mid (userRol) |
 | `BENEFICIOS_EGRESADOS_MID_AMAZON_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1` | Datos de proveedor/empresa (C-2b) |
 | `BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/gestor_documental_mid/v1` | Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de solicitudes. El cliente Angular nunca lo llama directo, solo el MID (`IdTipoDocumento=167` fijo) |
-| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Dev local**: si `true`, resuelve los parámetros (estados, categorías…) desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. Los ids del seed deben coincidir con los insertados en la BD de desarrollo (PUBLICADO=21, APROBADA empresa=10, categorías 40-45, etc.). |
+| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Dev local**: si `true`, resuelve los parámetros (estados, categorías…) desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. Los ids del seed deben coincidir con los insertados en la BD de desarrollo (PUBLICADO=21, ACTIVA empresa=10, categorías 40-45, etc.). |
 | `BENEFICIOS_EGRESADOS_MID_PORT` | `8080` | Puerto HTTP (en desarrollo local se usa `8081` para no chocar con el CRUD) |
 | `BENEFICIOS_EGRESADOS_MID_RUNMODE` | `dev` | Modo de ejecución de Beego |
 
@@ -70,7 +70,7 @@ PUT  /solicitudes/:id/cancelar                RN-005: solo PENDIENTE/REQUIERE_IN
 POST /empresas/provision                      JIT provisioning al login (C-2b/c): {email}
 GET  /usuarios/:usuario_id/empresas           selector multiempresa (caso 1:N)
 GET  /empresas/:empresa_id/solicitudes        bandeja (datos mínimos del egresado, RNF-002b)
-POST /empresas/:empresa_id/beneficios         publicar beneficio (RN-008b, empresa APROBADA)
+POST /empresas/:empresa_id/beneficios         publicar beneficio (RN-008b, empresa ACTIVA)
 PUT  /beneficios/:id                          editar beneficio
 PUT  /solicitudes/:id/responder               aprobar / rechazar / requerir info
 POST /solicitudes/:id/mensajes                mensajes (REQUIERE_INFO)

@@ -63,7 +63,7 @@ func (c *BeneficiosController) GetByEmpresa() {
 }
 
 // Publicar POST /v1/empresas/:empresa_id/beneficios
-// Publicar un beneficio. Solo si empresa = APROBADA. Valida RN-008b.
+// Publicar un beneficio. Solo si empresa = ACTIVA. Valida RN-008b.
 func (c *BeneficiosController) Publicar() {
 	empresaId, err := c.GetInt(":empresa_id")
 	if err != nil {

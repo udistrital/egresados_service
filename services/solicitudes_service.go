@@ -413,10 +413,12 @@ func esDelEgresado(token string, solicitudId, usuarioId int) bool {
 	return u != nil && toInt(firstOf(u, "id", "Id")) == usuarioId
 }
 
-// GetMensajes retorna el historial de mensajes de una solicitud.
+// GetMensajes retorna el historial de mensajes de una solicitud, ordenado
+// cronológicamente (más antiguo primero) para que el hilo se lea como un chat
+// normal. Sin sortby explícito el CRUD no garantiza el orden de retorno.
 func GetMensajes(token string, solicitudId int) (interface{}, error) {
 	var result interface{}
-	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&limit=0", solicitudId)
+	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&sortby=FechaEnvio&order=asc&limit=0", solicitudId)
 	if err := helpers.GetCRUD(token, query, &result); err != nil {
 		return nil, err
 	}

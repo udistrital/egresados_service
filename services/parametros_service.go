@@ -17,9 +17,8 @@ var parametrosLocal = os.Getenv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL") == 
 
 var parametrosSeed = map[string][]map[string]interface{}{
 	TipoParamEstadoEmpresa: {
-		{"Id": 10, "CodigoAbreviacion": "APROBADA", "Nombre": "Aprobada"},
-		{"Id": 11, "CodigoAbreviacion": "PENDIENTE", "Nombre": "Pendiente"},
-		{"Id": 12, "CodigoAbreviacion": "SUSPENDIDA", "Nombre": "Suspendida"},
+		{"Id": 10, "CodigoAbreviacion": "ACTIVA", "Nombre": "Activa"},
+		{"Id": 11, "CodigoAbreviacion": "SUSPENDIDA", "Nombre": "Suspendida"},
 	},
 	TipoParamEstadoBeneficio: {
 		{"Id": 20, "CodigoAbreviacion": "BORRADOR", "Nombre": "Borrador"},

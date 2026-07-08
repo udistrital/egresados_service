@@ -11,9 +11,13 @@ import (
 
 // EmpresaProvisionada es cada empresa a la que el usuario queda vinculado tras el JIT.
 type EmpresaProvisionada struct {
-	EmpresaId        int              `json:"empresa_id"`
-	UsuarioEmpresaId int              `json:"usuario_empresa_id"`
-	Proveedor        ProveedorPublico `json:"proveedor"`
+	EmpresaId        int    `json:"empresa_id"`
+	UsuarioEmpresaId int    `json:"usuario_empresa_id"`
+	// Nit va FUERA de ProveedorPublico (que es la whitelist RNF-002b para vistas
+	// públicas, p. ej. PerfilEmpresa) porque esta respuesta es la identidad propia
+	// de la empresa autenticada, no una vista de un tercero — aquí sí debe verse.
+	Nit       string           `json:"nit"`
+	Proveedor ProveedorPublico `json:"proveedor"`
 }
 
 // ProvisionResult es el resultado del JIT provisioning de un usuario de empresa.
@@ -82,7 +86,7 @@ func ProvisionarEmpresa(token string) (*ProvisionResult, error) {
 			return nil, err
 		}
 		res.Empresas = append(res.Empresas, EmpresaProvisionada{
-			EmpresaId: empresaId, UsuarioEmpresaId: ueId, Proveedor: p.ToPublico(),
+			EmpresaId: empresaId, UsuarioEmpresaId: ueId, Nit: p.NumDocumento, Proveedor: p.ToPublico(),
 		})
 	}
 	if len(res.Empresas) == 0 {
@@ -126,18 +130,33 @@ func findOrCreateUsuario(token, sub, email string) (int, error) {
 }
 
 // findOrCreateEmpresa busca la empresa local por agora_id_externo (idempotente) o la
-// crea en estado APROBADA (Ágora es quien la verifica). Devuelve el id local.
+// crea en estado ACTIVA (Ágora es quien la verifica). Devuelve el id local.
 func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 	agoraId := strconv.Itoa(p.Id)
+	// OJO: uq_nit_empresa es UNIQUE(nit) sin condición sobre activo (schema.sql), así
+	// que una fila soft-deleted (activo=false, p. ej. tras un DELETE manual en el CRUD)
+	// sigue "ocupando" el NIT para siempre. Por eso estas búsquedas NO filtran
+	// Activo:true: deben encontrar también filas inactivas para reactivarlas en vez de
+	// chocar con la restricción al intentar re-insertar.
 	var existentes []map[string]interface{}
-	q := fmt.Sprintf("/empresa?query=AgoraIdExterno:%s,Activo:true&limit=1", url.QueryEscape(agoraId))
+	q := fmt.Sprintf("/empresa?query=AgoraIdExterno:%s&limit=1", url.QueryEscape(agoraId))
 	if err := helpers.GetCRUD(token, q, &existentes); err != nil {
 		return 0, err
 	}
-	if len(existentes) > 0 {
-		return toInt(firstOf(existentes[0], "id", "Id")), nil
+	if len(existentes) == 0 {
+		// Fallback por NIT (la restricción real en BD): la empresa puede existir ya con
+		// otro agora_id_externo, o sin ninguno (p. ej. datos de seed) — buscarla por NIT
+		// evita el 500 por llave duplicada en cada login/recarga en vez de bloquear al
+		// usuario.
+		q = fmt.Sprintf("/empresa?query=Nit:%s&limit=1", url.QueryEscape(p.NumDocumento))
+		if err := helpers.GetCRUD(token, q, &existentes); err != nil {
+			return 0, err
+		}
 	}
-	estadoId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "APROBADA")
+	if len(existentes) > 0 {
+		return actualizarEmpresaDeAgora(token, existentes[0], p, agoraId)
+	}
+	estadoId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "ACTIVA")
 	if err != nil {
 		return 0, err
 	}
@@ -153,6 +172,42 @@ func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 		return 0, err
 	}
 	return toInt(firstOf(creada, "id", "Id")), nil
+}
+
+// actualizarEmpresaDeAgora sincroniza sobre una empresa local ya existente los datos
+// que llegan de Ágora en cada login (razón social, correo, agora_id_externo) y la
+// reactiva si estaba soft-deleted (activo=false); solo hace PUT si algo realmente
+// cambió, para no golpear el CRUD en el camino común (la gran mayoría de logins no
+// traen cambios). Parte del row completo devuelto por la búsqueda —no de un payload
+// parcial— porque el PUT del CRUD reemplaza la fila entera (o.Update sin lista de
+// columnas). NO toca estado_empresa_id: el ciclo de vida local (ACTIVA/SUSPENDIDA) lo
+// decide el módulo, no debe revertirse solo porque el usuario volvió a iniciar sesión.
+func actualizarEmpresaDeAgora(token string, existente map[string]interface{}, p *ProveedorAgora, agoraId string) (int, error) {
+	id := toInt(firstOf(existente, "id", "Id"))
+	cambio := false
+	if !asBool(firstOf(existente, "activo", "Activo")) {
+		existente["activo"] = true
+		cambio = true
+	}
+	if asString(firstOf(existente, "razon_social", "RazonSocial")) != p.NomProveedor {
+		existente["razon_social"] = p.NomProveedor
+		cambio = true
+	}
+	if asString(firstOf(existente, "correo_contacto", "CorreoContacto")) != p.Correo {
+		existente["correo_contacto"] = p.Correo
+		cambio = true
+	}
+	if asString(firstOf(existente, "agora_id_externo", "AgoraIdExterno")) != agoraId {
+		existente["agora_id_externo"] = agoraId
+		cambio = true
+	}
+	if !cambio {
+		return id, nil
+	}
+	if err := helpers.PutCRUD(token, fmt.Sprintf("/empresa/%d", id), existente); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // findOrCreateUsuarioEmpresa vincula usuario↔empresa (idempotente). Devuelve el id local.
