@@ -20,9 +20,10 @@ func (c *SolicitudesController) Crear() {
 		return
 	}
 
+	// El servicio valida que el egresado_id del body sea el del token (anti-IDOR).
 	result, err := services.CrearSolicitud(c.Ctx.Input.Header("Authorization"), body)
 	if err != nil {
-		helpers.UnprocessableEntity(&c.Controller, err.Error())
+		responderErrorNegocio(&c.Controller, err)
 		return
 	}
 	helpers.Created(&c.Controller, result)
@@ -37,7 +38,13 @@ func (c *SolicitudesController) GetByEgresado() {
 		return
 	}
 
-	result, err := services.GetSolicitudesByEgresado(c.Ctx.Input.Header("Authorization"), egresadoId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarEgresadoDelToken(token, egresadoId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetSolicitudesByEgresado(token, egresadoId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -54,11 +61,16 @@ func (c *SolicitudesController) Cancelar() {
 		return
 	}
 
-	// El egresado que cancela debe venir en el body o del token JWT
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoSolicitudEgresado(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	json.Unmarshal(c.Ctx.Input.RequestBody, &body)
 
-	if err := services.CancelarSolicitud(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
+	if err := services.CancelarSolicitud(token, id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -74,7 +86,13 @@ func (c *SolicitudesController) Resumen() {
 		return
 	}
 
-	result, err := services.GetResumenEgresado(c.Ctx.Input.Header("Authorization"), egresadoId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarEgresadoDelToken(token, egresadoId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetResumenEgresado(token, egresadoId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -92,13 +110,19 @@ func (c *SolicitudesController) Responder() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoSolicitudEmpresa(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
 		return
 	}
 
-	if err := services.ResponderSolicitud(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
+	if err := services.ResponderSolicitud(token, id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -114,13 +138,19 @@ func (c *SolicitudesController) EnviarMensaje() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteSolicitud(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
 		return
 	}
 
-	result, err := services.EnviarMensaje(c.Ctx.Input.Header("Authorization"), id, body)
+	result, err := services.EnviarMensaje(token, id, body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -137,7 +167,36 @@ func (c *SolicitudesController) GetMensajes() {
 		return
 	}
 
-	result, err := services.GetMensajes(c.Ctx.Input.Header("Authorization"), id)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteSolicitud(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetMensajes(token, id)
+	if err != nil {
+		helpers.InternalError(&c.Controller, err)
+		return
+	}
+	helpers.Ok(&c.Controller, result)
+}
+
+// GetHistorial GET /v1/solicitudes/:id/historial
+// Bitácora de estados (C-4b) para el drawer de detalle, de ambas partes.
+func (c *SolicitudesController) GetHistorial() {
+	id, err := c.GetInt(":id")
+	if err != nil {
+		helpers.BadRequest(&c.Controller, "id inválido")
+		return
+	}
+
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteSolicitud(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetHistorialSolicitud(token, id)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -155,7 +214,13 @@ func (c *SolicitudesController) GetDocumentos() {
 		return
 	}
 
-	result, err := services.GetDocumentosDeSolicitud(c.Ctx.Input.Header("Authorization"), id)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteSolicitud(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetDocumentosDeSolicitud(token, id)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -173,13 +238,19 @@ func (c *SolicitudesController) SubirDocumento() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoSolicitudEgresado(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
 		return
 	}
 
-	result, err := services.SubirDocumentoSolicitud(c.Ctx.Input.Header("Authorization"), id, body)
+	result, err := services.SubirDocumentoSolicitud(token, id, body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -201,7 +272,13 @@ func (c *SolicitudesController) EliminarDocumento() {
 		return
 	}
 
-	if err := services.EliminarDocumentoSolicitud(c.Ctx.Input.Header("Authorization"), id, docId); err != nil {
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoSolicitudEgresado(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	if err := services.EliminarDocumentoSolicitud(token, id, docId); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -218,6 +295,12 @@ func (c *SolicitudesController) ComentarDocumento() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoDocumentoEmpresa(token, docId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
@@ -225,7 +308,7 @@ func (c *SolicitudesController) ComentarDocumento() {
 	}
 	comentario, _ := body["comentario"].(string)
 
-	if err := services.ComentarDocumento(c.Ctx.Input.Header("Authorization"), docId, comentario); err != nil {
+	if err := services.ComentarDocumento(token, docId, comentario); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
@@ -242,7 +325,13 @@ func (c *SolicitudesController) GetComprobante() {
 		return
 	}
 
-	result, err := services.GetComprobanteSolicitud(c.Ctx.Input.Header("Authorization"), id)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteSolicitud(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetComprobanteSolicitud(token, id)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -260,7 +349,13 @@ func (c *SolicitudesController) GetArchivoDocumento() {
 		return
 	}
 
-	result, err := services.GetArchivoDocumento(c.Ctx.Input.Header("Authorization"), docId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarParticipanteDocumento(token, docId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetArchivoDocumento(token, docId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return

@@ -30,6 +30,8 @@ func init() {
 	web.Router("/v1/empresas/:empresa_id/solicitudes", &controllers.EmpresasController{}, "get:GetBandeja")
 	web.Router("/v1/solicitudes/:id/responder", &controllers.SolicitudesController{}, "put:Responder")
 	web.Router("/v1/solicitudes/:id/mensajes", &controllers.SolicitudesController{}, "post:EnviarMensaje;get:GetMensajes")
+	// GET /v1/solicitudes/:id/historial           bitácora de estados (C-4b, drawer)
+	web.Router("/v1/solicitudes/:id/historial", &controllers.SolicitudesController{}, "get:GetHistorial")
 
 	// ── Documentos requeridos / subidos (gestor_documental_mid, IdTipoDocumento=167) ──
 	// GET    /v1/beneficios/:id/documentos-requeridos   qué documentos exige la empresa
