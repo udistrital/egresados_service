@@ -126,7 +126,9 @@ func findOrCreateUsuario(token, sub, email string) (int, error) {
 }
 
 // findOrCreateEmpresa busca la empresa local por agora_id_externo (idempotente) o la
-// crea en estado APROBADA (Ágora es quien la verifica). Devuelve el id local.
+// crea en estado ACTIVA — la empresa nace operativa porque Ágora ya la verificó; el
+// módulo no tiene flujo de aprobación en el login (solo ACTIVA ↔ SUSPENDIDA, decisión
+// 2026-07-07 alineada con los parámetros institucionales creados). Devuelve el id local.
 func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 	agoraId := strconv.Itoa(p.Id)
 	var existentes []map[string]interface{}
@@ -137,7 +139,7 @@ func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 	if len(existentes) > 0 {
 		return toInt(firstOf(existentes[0], "id", "Id")), nil
 	}
-	estadoId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "APROBADA")
+	estadoId, err := ResolverParametroId(token, TipoParamEstadoEmpresa, "ACTIVA")
 	if err != nil {
 		return 0, err
 	}
