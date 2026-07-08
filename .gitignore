@@ -6,7 +6,7 @@
 *.dylib
 app
 main
-sga_mid_beneficios_egresados
+egresados_service
 
 # Go workspace
 vendor/

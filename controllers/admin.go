@@ -2,13 +2,19 @@ package controllers
 
 import (
 	"github.com/beego/beego/v2/server/web"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
-	"github.com/udistrital/sga_mid_beneficios_egresados/services"
+	"github.com/udistrital/egresados_service/helpers"
+	"github.com/udistrital/egresados_service/services"
 )
 
 type AdminController struct{ web.Controller }
 
-// SuspenderEmpresa PUT /v1/empresas/:id/suspender
+// @Title SuspenderEmpresa
+// @Description Suspende una empresa (pasa de ACTIVA a SUSPENDIDA).
+// @Param   id    path    int    true    "id de la empresa"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 422 la empresa no se puede suspender en su estado actual
+// @router /empresas/:id/suspender [put]
 func (c *AdminController) SuspenderEmpresa() {
 	id, err := c.GetInt(":id")
 	if err != nil {

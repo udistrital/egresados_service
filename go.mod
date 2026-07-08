@@ -1,4 +1,4 @@
-module github.com/udistrital/sga_mid_beneficios_egresados
+module github.com/udistrital/egresados_service
 
 go 1.22.0
 

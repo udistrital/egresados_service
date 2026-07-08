@@ -3,17 +3,17 @@ package services
 import (
 	"fmt"
 	"net/url"
-	"os"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/beego/beego/v2/server/web"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // parametrosLocal activa un catálogo de parámetros EN MEMORIA para desarrollo local,
-// sin token ni servicio institucional. Se enciende con
-// BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL=true. Los códigos son los de la semilla de
-// db/schema.sql; los ids son locales y estables y DEBEN coincidir con los que se
-// insertan en la BD de desarrollo (empresa.estado_empresa_id, beneficio.*_id, etc.).
-var parametrosLocal = os.Getenv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL") == "true"
+// sin token ni servicio institucional. Se enciende con ParametrosLocal=true en
+// conf/app.conf (env EGRESADOS_SERVICE_PARAMETROS_LOCAL). Los códigos son los de la
+// semilla de db/schema.sql; los ids son locales y estables y DEBEN coincidir con los
+// que se insertan en la BD de desarrollo (empresa.estado_empresa_id, beneficio.*_id, etc.).
+var parametrosLocal = web.AppConfig.DefaultString("ParametrosLocal", "false") == "true"
 
 // parametrosSeed espeja los parámetros REALES del servicio institucional (creados el
 // 2026-07-07: area EGR id=32, tipos 174-179). Los ids son los INSTITUCIONALES — la BD

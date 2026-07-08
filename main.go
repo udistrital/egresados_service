@@ -1,24 +1,15 @@
 package main
 
 import (
-	"os"
-	"strconv"
-
 	"github.com/beego/beego/v2/server/web"
 	"github.com/beego/beego/v2/server/web/filter/cors"
-	"github.com/udistrital/sga_mid_beneficios_egresados/middleware"
-	_ "github.com/udistrital/sga_mid_beneficios_egresados/routers"
+	"github.com/udistrital/egresados_service/middleware"
+	_ "github.com/udistrital/egresados_service/routers"
 )
 
 func init() {
-	if port := os.Getenv("BENEFICIOS_EGRESADOS_MID_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			web.BConfig.Listen.HTTPPort = p
-		}
-	}
-	if runmode := os.Getenv("BENEFICIOS_EGRESADOS_MID_RUNMODE"); runmode != "" {
-		web.BConfig.RunMode = runmode
-	}
+	// httpport/runmode se resuelven solos desde conf/app.conf (Beego los aplica al
+	// parsear el ini); ya no hace falta leerlos a mano por os.Getenv.
 
 	// CORS: el micro-frontend (localhost:4200) llama al MID cross-origin. Se permiten
 	// todos los orígenes (API pública tras el gateway); Authorization va en AllowHeaders
@@ -34,6 +25,12 @@ func init() {
 	// firma RS256 contra el JWKS de WSO2 o userinfo para tokens opacos. Sin token
 	// válido → 401 antes de tocar cualquier controller. Ver middleware/jwt.go.
 	web.InsertFilter("/v1/*", web.BeforeRouter, middleware.ValidarJWTEntrante)
+
+	// EnableDocs (conf/app.conf) solo activa la bandera; Beego v2 no sirve
+	// swagger/ automáticamente, hay que exponerla como estática (bee generate docs).
+	if web.BConfig.WebConfig.EnableDocs {
+		web.SetStaticPath("/swagger", "swagger")
+	}
 }
 
 func main() {

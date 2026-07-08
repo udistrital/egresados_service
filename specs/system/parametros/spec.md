@@ -21,7 +21,7 @@ centralizado en el MID, fallback local de desarrollo.
 
 ## Repos involucrados
 
-- `sga_mid_beneficios_egresados` — único consumidor (`services/parametros_service.go`).
+- `egresados_service` — único consumidor (`services/parametros_service.go`).
 - `sga_crud_beneficios_egresados` — guarda **ids planos** de parámetro (`*int` si nullable); sin FK local de catálogo (C-6: `parametro` virtualizado).
 - Frontend — nunca llama al servicio de parámetros; recibe códigos resueltos por el MID.
 
@@ -43,7 +43,7 @@ Respuesta: { "Success": true, "Status": "200", "Message": "...", "Data": [ ... ]
 
 - Dot-notation del query se traduce a `__` (contrato Beego del SGA).
 - `fecha_creacion`/`fecha_modificacion` las asigna el servidor (no van en POST).
-- Env: `BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL`
+- Env: `EGRESADOS_SERVICE_PARAMETROS_URL`
   (default `https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1`).
 - OJO homónimos: la API correcta es `Parametros` (`/parametros/v1`), NO `ParametrosGobierno`.
 
@@ -65,7 +65,7 @@ Jerarquía: `AreaTipo → TipoParametro → Parametro`. Área del módulo: **EGR
 
 ## Modo local de desarrollo (fallback offline)
 
-`BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL=true` resuelve los catálogos desde un
+`EGRESADOS_SERVICE_PARAMETROS_LOCAL=true` resuelve los catálogos desde un
 seed en memoria del MID, **con los mismos ids institucionales (7199+)** — la BD
 dev se migró a esos ids (2026-07-07, 97 filas), así que modo local y real son
 intercambiables. Desde el 2026-07-07 el MID de dev se levanta SIN esta env

@@ -33,7 +33,7 @@ todo queda trazado (radicados, historial de estados, auditoría).
 | Repo | Stack | Rol |
 |---|---|---|
 | `sga_crud_beneficios_egresados` | Go + Beego ORM | CRUD genérico + PostgreSQL (schema `beneficios_egresados`) |
-| `sga_mid_beneficios_egresados` | Go + Beego | Lógica de negocio, reglas RN-*, orquestación e integración institucional |
+| `egresados_service` | Go + Beego | Lógica de negocio, reglas RN-*, orquestación e integración institucional |
 | `sga_cliente_beneficios_egresados_mf` | Angular 16.2 + Single-SPA | Micro-frontend con las vistas de egresado y de empresa |
 
 El frontend **solo** habla con el MID; el MID consume el CRUD local y los

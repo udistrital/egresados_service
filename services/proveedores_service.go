@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // ProveedorAgora es la proyección MÍNIMA de un registro de informacion_proveedor

@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // ProvisionEgresadoResult es el resultado del JIT provisioning de un egresado.

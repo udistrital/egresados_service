@@ -4,8 +4,8 @@ import (
 	"errors"
 
 	"github.com/beego/beego/v2/server/web"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
-	"github.com/udistrital/sga_mid_beneficios_egresados/services"
+	"github.com/udistrital/egresados_service/helpers"
+	"github.com/udistrital/egresados_service/services"
 )
 
 // responderErrorAcceso traduce los errores de las verificaciones anti-IDOR:

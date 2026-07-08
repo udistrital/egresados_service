@@ -4,15 +4,20 @@ import (
 	"encoding/json"
 
 	"github.com/beego/beego/v2/server/web"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
-	"github.com/udistrital/sga_mid_beneficios_egresados/services"
+	"github.com/udistrital/egresados_service/helpers"
+	"github.com/udistrital/egresados_service/services"
 )
 
 type SolicitudesController struct{ web.Controller }
 
-// Crear POST /v1/solicitudes
-// Crea una solicitud. Valida: límite activo (RN-010), cupo atómico (RN-002b),
-// solicitud única por (egresado, beneficio) (RN-007), genera radicado (RN-RADICADO).
+// @Title Crear
+// @Description Crea una solicitud. Valida: límite activo (RN-010), cupo atómico (RN-002b), solicitud única por (egresado, beneficio) (RN-007), genera radicado (RN-RADICADO). El egresado_id del body debe ser el del token (anti-IDOR).
+// @Param   body    body    string    true    "JSON con beneficio_id y demás datos de la solicitud"
+// @Success 201 {object} helpers.APIResponse
+// @Failure 400 body inválido
+// @Failure 403 el egresado_id del body no coincide con el del token
+// @Failure 422 regla de negocio violada (límite activo, cupo, solicitud duplicada)
+// @router /solicitudes [post]
 func (c *SolicitudesController) Crear() {
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
@@ -29,8 +34,14 @@ func (c *SolicitudesController) Crear() {
 	helpers.Created(&c.Controller, result)
 }
 
-// GetByEgresado GET /v1/solicitudes/egresado/:egresado_id
-// Lista de solicitudes del egresado con estado e historial.
+// @Title GetByEgresado
+// @Description Lista de solicitudes del egresado con estado e historial.
+// @Param   egresado_id    path    int    true    "id del egresado"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 egresado_id inválido
+// @Failure 403 el egresado_id no coincide con el del token
+// @Failure 500 error interno
+// @router /solicitudes/egresado/:egresado_id [get]
 func (c *SolicitudesController) GetByEgresado() {
 	egresadoId, err := c.GetInt(":egresado_id")
 	if err != nil {
@@ -52,8 +63,15 @@ func (c *SolicitudesController) GetByEgresado() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// Cancelar PUT /v1/solicitudes/:id/cancelar
-// Cancelar solicitud. Solo si estado = PENDIENTE o REQUIERE_INFO (RN-005). Devuelve cupo (RN-002c).
+// @Title Cancelar
+// @Description Cancelar solicitud. Solo si estado = PENDIENTE o REQUIERE_INFO (RN-005). Devuelve cupo (RN-002c).
+// @Param   id      path    int       true    "id de la solicitud"
+// @Param   body    body    string    false   "JSON opcional con justificación"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no es dueño de la solicitud
+// @Failure 422 la solicitud no está en un estado cancelable
+// @router /solicitudes/:id/cancelar [put]
 func (c *SolicitudesController) Cancelar() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -77,8 +95,14 @@ func (c *SolicitudesController) Cancelar() {
 	helpers.Ok(&c.Controller, "solicitud cancelada")
 }
 
-// Resumen GET /v1/solicitudes/egresado/:egresado_id/resumen
-// Contadores por estado (activas, aprobadas, rechazadas, canceladas).
+// @Title Resumen
+// @Description Contadores por estado (activas, aprobadas, rechazadas, canceladas).
+// @Param   egresado_id    path    int    true    "id del egresado"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 egresado_id inválido
+// @Failure 403 el egresado_id no coincide con el del token
+// @Failure 500 error interno
+// @router /solicitudes/egresado/:egresado_id/resumen [get]
 func (c *SolicitudesController) Resumen() {
 	egresadoId, err := c.GetInt(":egresado_id")
 	if err != nil {
@@ -100,9 +124,15 @@ func (c *SolicitudesController) Resumen() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// Responder PUT /v1/solicitudes/:id/responder
-// Aprobar / Rechazar / Requiere información (empresa).
-// Rechazar requiere justificacion >= 20 chars (RN-003).
+// @Title Responder
+// @Description Aprobar / Rechazar / Requiere información (empresa). Rechazar requiere justificacion >= 20 chars (RN-003).
+// @Param   id      path    int       true    "id de la solicitud"
+// @Param   body    body    string    true    "JSON con la decisión (aprobar/rechazar/requiere_info) y justificación"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id o body inválido
+// @Failure 403 el usuario del token no es dueño de la empresa de la solicitud
+// @Failure 422 justificación insuficiente u otra regla de negocio (RN-003)
+// @router /solicitudes/:id/responder [put]
 func (c *SolicitudesController) Responder() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -129,8 +159,15 @@ func (c *SolicitudesController) Responder() {
 	helpers.Ok(&c.Controller, "solicitud actualizada")
 }
 
-// EnviarMensaje POST /v1/solicitudes/:id/mensajes
-// Enviar mensaje (solo cuando estado = REQUIERE_INFO).
+// @Title EnviarMensaje
+// @Description Enviar mensaje (solo cuando estado = REQUIERE_INFO).
+// @Param   id      path    int       true    "id de la solicitud"
+// @Param   body    body    string    true    "JSON con el texto del mensaje"
+// @Success 201 {object} helpers.APIResponse
+// @Failure 400 id o body inválido
+// @Failure 403 el usuario del token no participa de la solicitud
+// @Failure 422 la solicitud no admite mensajes en su estado actual
+// @router /solicitudes/:id/mensajes [post]
 func (c *SolicitudesController) EnviarMensaje() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -158,8 +195,14 @@ func (c *SolicitudesController) EnviarMensaje() {
 	helpers.Created(&c.Controller, result)
 }
 
-// GetMensajes GET /v1/solicitudes/:id/mensajes
-// Historial de mensajes de la solicitud.
+// @Title GetMensajes
+// @Description Historial de mensajes de la solicitud.
+// @Param   id    path    int    true    "id de la solicitud"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no participa de la solicitud
+// @Failure 500 error interno
+// @router /solicitudes/:id/mensajes [get]
 func (c *SolicitudesController) GetMensajes() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -181,8 +224,14 @@ func (c *SolicitudesController) GetMensajes() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetHistorial GET /v1/solicitudes/:id/historial
-// Bitácora de estados (C-4b) para el drawer de detalle, de ambas partes.
+// @Title GetHistorial
+// @Description Bitácora de estados (C-4b) para el drawer de detalle, de ambas partes.
+// @Param   id    path    int    true    "id de la solicitud"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no participa de la solicitud
+// @Failure 500 error interno
+// @router /solicitudes/:id/historial [get]
 func (c *SolicitudesController) GetHistorial() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -204,9 +253,14 @@ func (c *SolicitudesController) GetHistorial() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetDocumentos GET /v1/solicitudes/:id/documentos
-// Documentos requeridos del beneficio vs. subidos por el egresado (merge), para
-// que tanto el egresado (qué le falta) como la empresa (qué revisar) vean lo mismo.
+// @Title GetDocumentos
+// @Description Documentos requeridos del beneficio vs. subidos por el egresado (merge), para que tanto el egresado (qué le falta) como la empresa (qué revisar) vean lo mismo.
+// @Param   id    path    int    true    "id de la solicitud"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no participa de la solicitud
+// @Failure 500 error interno
+// @router /solicitudes/:id/documentos [get]
 func (c *SolicitudesController) GetDocumentos() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -228,9 +282,15 @@ func (c *SolicitudesController) GetDocumentos() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// SubirDocumento POST /v1/solicitudes/:id/documentos
-// El egresado sube (o reemplaza) el PDF de un documento requerido. Body:
-// { documento_requerido_id, nombre_archivo, file (base64, PDF) }.
+// @Title SubirDocumento
+// @Description El egresado sube (o reemplaza) el PDF de un documento requerido.
+// @Param   id      path    int       true    "id de la solicitud"
+// @Param   body    body    string    true    "JSON { documento_requerido_id, nombre_archivo, file (base64, PDF) }"
+// @Success 201 {object} helpers.APIResponse
+// @Failure 400 id o body inválido
+// @Failure 403 el usuario del token no es dueño de la solicitud
+// @Failure 422 archivo inválido u otra regla de negocio
+// @router /solicitudes/:id/documentos [post]
 func (c *SolicitudesController) SubirDocumento() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -258,8 +318,15 @@ func (c *SolicitudesController) SubirDocumento() {
 	helpers.Created(&c.Controller, result)
 }
 
-// EliminarDocumento DELETE /v1/solicitudes/:id/documentos/:doc_id
-// El egresado quita un documento que había subido.
+// @Title EliminarDocumento
+// @Description El egresado quita un documento que había subido.
+// @Param   id        path    int    true    "id de la solicitud"
+// @Param   doc_id    path    int    true    "id del documento"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id o doc_id inválido
+// @Failure 403 el usuario del token no es dueño de la solicitud
+// @Failure 422 el documento no se puede eliminar en el estado actual
+// @router /solicitudes/:id/documentos/:doc_id [delete]
 func (c *SolicitudesController) EliminarDocumento() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -285,9 +352,15 @@ func (c *SolicitudesController) EliminarDocumento() {
 	helpers.Ok(&c.Controller, "documento eliminado")
 }
 
-// ComentarDocumento PUT /v1/documentos/:doc_id/comentario
-// La empresa deja una observación sobre un documento subido por el egresado.
-// Body: { comentario }.
+// @Title ComentarDocumento
+// @Description La empresa deja una observación sobre un documento subido por el egresado.
+// @Param   doc_id    path    int       true    "id del documento"
+// @Param   body      body    string    true    "JSON { comentario }"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 doc_id o body inválido
+// @Failure 403 el usuario del token no tiene acceso a ese documento
+// @Failure 422 error de negocio
+// @router /documentos/:doc_id/comentario [put]
 func (c *SolicitudesController) ComentarDocumento() {
 	docId, err := c.GetInt(":doc_id")
 	if err != nil {
@@ -315,9 +388,14 @@ func (c *SolicitudesController) ComentarDocumento() {
 	helpers.Ok(&c.Controller, "comentario guardado")
 }
 
-// GetComprobante GET /v1/solicitudes/:id/comprobante
-// Comprobante opcional que la empresa adjuntó al aprobar. { tiene_comprobante,
-// nombre_archivo?, file? (base64) }.
+// @Title GetComprobante
+// @Description Comprobante opcional que la empresa adjuntó al aprobar. { tiene_comprobante, nombre_archivo?, file? (base64) }.
+// @Param   id    path    int    true    "id de la solicitud"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no participa de la solicitud
+// @Failure 500 error interno
+// @router /solicitudes/:id/comprobante [get]
 func (c *SolicitudesController) GetComprobante() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -339,9 +417,14 @@ func (c *SolicitudesController) GetComprobante() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetArchivoDocumento GET /v1/documentos/:doc_id/archivo
-// Proxy de solo lectura hacia el gestor documental: el cliente nunca llama a ese
-// servicio directamente. Devuelve { nombre_archivo, file (base64) }.
+// @Title GetArchivoDocumento
+// @Description Proxy de solo lectura hacia el gestor documental: el cliente nunca llama a ese servicio directamente. Devuelve { nombre_archivo, file (base64) }.
+// @Param   doc_id    path    int    true    "id del documento"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 doc_id inválido
+// @Failure 403 el usuario del token no participa del documento
+// @Failure 500 error interno
+// @router /documentos/:doc_id/archivo [get]
 func (c *SolicitudesController) GetArchivoDocumento() {
 	docId, err := c.GetInt(":doc_id")
 	if err != nil {
