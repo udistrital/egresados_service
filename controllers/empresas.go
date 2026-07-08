@@ -32,7 +32,13 @@ func (c *EmpresasController) GetEmpresasDeUsuario() {
 		return
 	}
 
-	result, err := services.GetEmpresasDeUsuario(c.Ctx.Input.Header("Authorization"), usuarioId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarUsuarioDelToken(token, usuarioId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetEmpresasDeUsuario(token, usuarioId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -67,7 +73,13 @@ func (c *EmpresasController) GetBandeja() {
 		return
 	}
 
-	result, err := services.GetBandejaEmpresa(c.Ctx.Input.Header("Authorization"), empresaId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoEmpresa(token, empresaId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetBandejaEmpresa(token, empresaId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return

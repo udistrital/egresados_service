@@ -54,7 +54,13 @@ func (c *BeneficiosController) GetByEmpresa() {
 		helpers.BadRequest(&c.Controller, "empresa_id inválido")
 		return
 	}
-	result, err := services.GetBeneficiosDeEmpresa(c.Ctx.Input.Header("Authorization"), empresaId)
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoEmpresa(token, empresaId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
+	result, err := services.GetBeneficiosDeEmpresa(token, empresaId)
 	if err != nil {
 		helpers.InternalError(&c.Controller, err)
 		return
@@ -71,13 +77,19 @@ func (c *BeneficiosController) Publicar() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoEmpresa(token, empresaId); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
 		return
 	}
 
-	result, err := services.PublicarBeneficio(c.Ctx.Input.Header("Authorization"), empresaId, body)
+	result, err := services.PublicarBeneficio(token, empresaId, body)
 	if err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
@@ -111,13 +123,19 @@ func (c *BeneficiosController) Editar() {
 		return
 	}
 
+	token := c.Ctx.Input.Header("Authorization")
+	if err := services.VerificarAccesoBeneficio(token, id); err != nil {
+		responderErrorAcceso(&c.Controller, err)
+		return
+	}
+
 	var body map[string]interface{}
 	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &body); err != nil {
 		helpers.BadRequest(&c.Controller, "cuerpo de solicitud inválido")
 		return
 	}
 
-	if err := services.EditarBeneficio(c.Ctx.Input.Header("Authorization"), id, body); err != nil {
+	if err := services.EditarBeneficio(token, id, body); err != nil {
 		helpers.UnprocessableEntity(&c.Controller, err.Error())
 		return
 	}
