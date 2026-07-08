@@ -3,7 +3,7 @@
 > **Última actualización:** 2026-07-08 · **Estado:** implementado y probado e2e
 > (login ambos perfiles 2026-07-02; JWT entrante + anti-IDOR 2026-07-07).
 > Referencias de fondo: `docs/referencia-autenticacion-agora.md` (este repo) y
-> `docs/referencia-autenticacion-wso2.md` (repo `sga_cliente_beneficios_egresados_mf`).
+> `docs/referencia-autenticacion-wso2.md` (repo `egresados_cliente`).
 
 ## Objetivo
 

@@ -6,9 +6,9 @@ Orquesta el CRUD del módulo y los servicios institucionales (parámetros, Ágor
 autenticación) y aplica las reglas de negocio.
 
 Capas hermanas:
-[`sga_crud_beneficios_egresados`](https://github.com/DanielVelandia2407/sga_crud_beneficios_egresados)
+[`egresados_crud`](https://github.com/udistrital/egresados_crud)
 (persistencia) y
-[`sga_cliente_beneficios_egresados_mf`](https://github.com/DanielVelandia2407/sga_cliente_beneficios_egresados_mf)
+[`egresados_cliente`](https://github.com/udistrital/egresados_cliente)
 (micro-frontend).
 
 ## Especificaciones técnicas
