@@ -15,43 +15,56 @@ import (
 // insertan en la BD de desarrollo (empresa.estado_empresa_id, beneficio.*_id, etc.).
 var parametrosLocal = os.Getenv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL") == "true"
 
+// parametrosSeed espeja los parámetros REALES del servicio institucional (creados el
+// 2026-07-07: area EGR id=32, tipos 174-179). Los ids son los INSTITUCIONALES — la BD
+// de dev se migró a ellos (migration_2026-07-07_ids_parametros_institucionales.sql),
+// así el modo local y el real son intercambiables sin tocar datos.
 var parametrosSeed = map[string][]map[string]interface{}{
+	// Modelo de empresa SIN flujo de aprobación: nace ACTIVA (Ágora ya la verificó) y
+	// solo puede pasar a SUSPENDIDA.
 	TipoParamEstadoEmpresa: {
-		{"Id": 10, "CodigoAbreviacion": "ACTIVA", "Nombre": "Activa"},
-		{"Id": 11, "CodigoAbreviacion": "SUSPENDIDA", "Nombre": "Suspendida"},
+		{"Id": 7199, "CodigoAbreviacion": "ACTIVA", "Nombre": "Activa"},
+		{"Id": 7200, "CodigoAbreviacion": "SUSPENDIDA", "Nombre": "Suspendida"},
 	},
 	TipoParamEstadoBeneficio: {
-		{"Id": 20, "CodigoAbreviacion": "BORRADOR", "Nombre": "Borrador"},
-		{"Id": 21, "CodigoAbreviacion": "PUBLICADO", "Nombre": "Publicado"},
-		{"Id": 22, "CodigoAbreviacion": "AGOTADO", "Nombre": "Agotado"},
-		{"Id": 23, "CodigoAbreviacion": "VENCIDO", "Nombre": "Vencido"},
-		{"Id": 24, "CodigoAbreviacion": "RETIRADO", "Nombre": "Retirado"},
+		{"Id": 7201, "CodigoAbreviacion": "BORRADOR", "Nombre": "Borrador"},
+		{"Id": 7202, "CodigoAbreviacion": "PUBLICADO", "Nombre": "Publicado"},
+		{"Id": 7203, "CodigoAbreviacion": "AGOTADO", "Nombre": "Agotado"},
+		{"Id": 7204, "CodigoAbreviacion": "VENCIDO", "Nombre": "Vencido"},
+		{"Id": 7205, "CodigoAbreviacion": "RETIRADO", "Nombre": "Retirado"},
 	},
 	TipoParamEstadoSolicitud: {
-		{"Id": 30, "CodigoAbreviacion": "PENDIENTE", "Nombre": "Pendiente"},
-		{"Id": 31, "CodigoAbreviacion": "EN_REVISION", "Nombre": "En revisión"},
-		{"Id": 32, "CodigoAbreviacion": "REQUIERE_INFO", "Nombre": "Requiere información"},
-		{"Id": 33, "CodigoAbreviacion": "APROBADA", "Nombre": "Aprobada"},
-		{"Id": 34, "CodigoAbreviacion": "RECHAZADA", "Nombre": "Rechazada"},
-		{"Id": 35, "CodigoAbreviacion": "CANCELADA", "Nombre": "Cancelada"},
+		{"Id": 7206, "CodigoAbreviacion": "PENDIENTE", "Nombre": "Pendiente"},
+		{"Id": 7207, "CodigoAbreviacion": "EN_REVISION", "Nombre": "En revisión"},
+		{"Id": 7208, "CodigoAbreviacion": "REQUIERE_INFO", "Nombre": "Requiere información"},
+		{"Id": 7209, "CodigoAbreviacion": "APROBADA", "Nombre": "Aprobada"},
+		{"Id": 7210, "CodigoAbreviacion": "RECHAZADA", "Nombre": "Rechazada"},
+		{"Id": 7211, "CodigoAbreviacion": "CANCELADA", "Nombre": "Cancelada"},
 	},
 	TipoParamCategoriaBeneficio: {
-		{"Id": 40, "CodigoAbreviacion": "EDUCACION", "Nombre": "Educación"},
-		{"Id": 41, "CodigoAbreviacion": "SALUD", "Nombre": "Salud"},
-		{"Id": 42, "CodigoAbreviacion": "RECREACION", "Nombre": "Recreación"},
-		{"Id": 43, "CodigoAbreviacion": "EMPLEO", "Nombre": "Empleo"},
-		{"Id": 44, "CodigoAbreviacion": "DESCUENTOS", "Nombre": "Descuentos"},
-		{"Id": 45, "CodigoAbreviacion": "OTRO", "Nombre": "Otro"},
+		{"Id": 7212, "CodigoAbreviacion": "EDUCACION", "Nombre": "Educación"},
+		{"Id": 7213, "CodigoAbreviacion": "SALUD", "Nombre": "Salud"},
+		{"Id": 7214, "CodigoAbreviacion": "RECREACION", "Nombre": "Recreación"},
+		{"Id": 7215, "CodigoAbreviacion": "EMPLEO", "Nombre": "Empleo"},
+		{"Id": 7216, "CodigoAbreviacion": "DESCUENTOS", "Nombre": "Descuentos"},
+		{"Id": 7217, "CodigoAbreviacion": "OTRO", "Nombre": "Otro"},
 	},
+	// Solo los 3 sectores que existían en la semilla local; el servicio real tiene 10
+	// (7218-7227) — en modo real llegan todos.
 	TipoParamSectorEconomico: {
-		{"Id": 50, "CodigoAbreviacion": "TEC", "Nombre": "Tecnología e Innovación"},
-		{"Id": 51, "CodigoAbreviacion": "COM", "Nombre": "Comercio y Retail"},
-		{"Id": 52, "CodigoAbreviacion": "OTR", "Nombre": "Otro"},
+		{"Id": 7218, "CodigoAbreviacion": "TEC", "Nombre": "Tecnología e Innovación"},
+		{"Id": 7222, "CodigoAbreviacion": "COM", "Nombre": "Comercio y Retail"},
+		{"Id": 7227, "CodigoAbreviacion": "OTR", "Nombre": "Otro"},
 	},
+	// Códigos ≤20 chars: codigo_abreviacion institucional es varchar(20) — estos son
+	// los códigos REALES creados en el servicio el 2026-07-07 (los largos originales
+	// no cabían). OJO: la tabla institucional NO tiene columna de valor; "Valor" solo
+	// existe en esta semilla local. Contra el servicio real el MID usa sus defaults
+	// (getLimiteActivas → 5) hasta que se acuerde un portador (numero_orden).
 	TipoParamParametroSistema: {
-		{"Id": 60, "CodigoAbreviacion": "LIMITE_SOLIC_ACTIVAS", "Nombre": "Límite solicitudes activas", "Valor": "5"},
-		{"Id": 61, "CodigoAbreviacion": "PAGINACION_DEFAULT", "Nombre": "Paginación catálogo", "Valor": "20"},
-		{"Id": 62, "CodigoAbreviacion": "JUSTIF_RECHAZO_MIN", "Nombre": "Mínimo justificación rechazo", "Valor": "20"},
+		{"Id": 7228, "CodigoAbreviacion": "LIMITE_SOLIC_ACTIVAS", "Nombre": "Límite solicitudes activas", "Valor": "5"},
+		{"Id": 7229, "CodigoAbreviacion": "PAGINACION_DEFAULT", "Nombre": "Paginación catálogo", "Valor": "20"},
+		{"Id": 7230, "CodigoAbreviacion": "JUSTIF_RECHAZO_MIN", "Nombre": "Mínimo justificación rechazo", "Valor": "20"},
 	},
 }
 

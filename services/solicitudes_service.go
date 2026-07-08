@@ -35,6 +35,12 @@ func CrearSolicitud(token string, body map[string]interface{}) (interface{}, err
 	eid := toInt(egresadoId)
 	bid := toInt(beneficioId)
 
+	// Anti-IDOR: el egresado_id del body debe ser el del dueño del token — sin esto
+	// se podrían crear solicitudes a nombre de otro egresado.
+	if err := VerificarEgresadoDelToken(token, eid); err != nil {
+		return nil, err
+	}
+
 	// RN-007 y RN-010 comparten la misma consulta: las solicitudes EN CURSO del egresado
 	// (estado vigente no terminal). Una rechazada/cancelada no bloquea ni cuenta.
 	activas, err := beneficiosConSolicitudActiva(token, eid)
@@ -413,9 +419,44 @@ func esDelEgresado(token string, solicitudId, usuarioId int) bool {
 	return u != nil && toInt(firstOf(u, "id", "Id")) == usuarioId
 }
 
-// GetMensajes retorna el historial de mensajes de una solicitud, ordenado
-// cronológicamente (más antiguo primero) para que el hilo se lea como un chat
-// normal. Sin sortby explícito el CRUD no garantiza el orden de retorno.
+// GetHistorialSolicitud retorna la bitácora de estados de la solicitud (C-4b, más
+// reciente primero, como la entrega el CRUD) con los códigos de estado resueltos
+// para la UI (mismo mecanismo C-1 de la bandeja). Proyección mínima: el actor viaja
+// solo como usuario{id} (RNF-002b) y el comprobante NO se incluye (tiene su propio
+// endpoint GET /solicitudes/:id/comprobante).
+func GetHistorialSolicitud(token string, solicitudId int) ([]map[string]interface{}, error) {
+	var filas []map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d", solicitudId), &filas); err != nil {
+		return nil, err
+	}
+	historial := make([]map[string]interface{}, 0, len(filas))
+	for _, h := range filas {
+		item := map[string]interface{}{
+			"id":              h["id"],
+			"estado_nuevo_id": h["estado_nuevo_id"],
+			"fecha_cambio":    h["fecha_cambio"],
+		}
+		if codigo, err := ResolverParametroCodigo(token, TipoParamEstadoSolicitud, toInt(h["estado_nuevo_id"])); err == nil {
+			item["estado_nuevo"] = codigo
+		}
+		if aid := toInt(h["estado_anterior_id"]); aid > 0 {
+			item["estado_anterior_id"] = aid
+			if codigo, err := ResolverParametroCodigo(token, TipoParamEstadoSolicitud, aid); err == nil {
+				item["estado_anterior"] = codigo
+			}
+		}
+		if j := asString(h["justificacion"]); j != "" {
+			item["justificacion"] = j
+		}
+		if u, ok := h["usuario"].(map[string]interface{}); ok {
+			item["usuario"] = map[string]interface{}{"id": toInt(firstOf(u, "id", "Id"))}
+		}
+		historial = append(historial, item)
+	}
+	return historial, nil
+}
+
+// GetMensajes retorna el historial de mensajes de una solicitud.
 func GetMensajes(token string, solicitudId int) (interface{}, error) {
 	var result interface{}
 	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&sortby=FechaEnvio&order=asc&limit=0", solicitudId)
