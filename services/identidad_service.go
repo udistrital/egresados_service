@@ -16,7 +16,7 @@ type UserRol struct {
 	DocumentoCompuesto string   `json:"documento_compuesto"`
 	Email              string   `json:"email"`
 	FamilyName         string   `json:"FamilyName"`
-	Codigo             string   `json:"Codigo"`  // código estudiantil (solo egresados)
+	Codigo             string   `json:"Codigo"` // código estudiantil (solo egresados)
 	Estado             string   `json:"Estado"` // "E" = egresado; distinto de E = empresa
 }
 
