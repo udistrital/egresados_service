@@ -10,8 +10,8 @@
 //     llamadas remotas por request (el JWKS se cachea).
 //   - Token opaco: se valida contra el endpoint OIDC userinfo (caché 5 min por token).
 //
-// Se desactiva con BENEFICIOS_EGRESADOS_MID_VALIDAR_JWT=false (solo para desarrollo
-// sin conectividad; NUNCA en producción).
+// Se desactiva con EGRESADOS_SERVICE_VALIDAR_JWT=false (ValidarJWT en conf/app.conf;
+// solo para desarrollo sin conectividad; NUNCA en producción).
 package middleware
 
 import (
@@ -23,26 +23,21 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/beego/beego/v2/server/web"
 	beectx "github.com/beego/beego/v2/server/web/context"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 var (
-	validarActivo = os.Getenv("BENEFICIOS_EGRESADOS_MID_VALIDAR_JWT") != "false"
-	jwksURL       = getEnv("BENEFICIOS_EGRESADOS_MID_JWKS_URL", "https://autenticacion.portaloas.udistrital.edu.co/oauth2/jwks")
+	validarActivo = web.AppConfig.DefaultString("ValidarJWT", "true") != "false"
+	// Sin default quemado: si EGRESADOS_SERVICE_JWKS_URL no está seteada, la
+	// consulta al JWKS falla explícito en vez de pegarle en silencio al WSO2 real.
+	jwksURL = web.AppConfig.DefaultString("Wso2JwksService", "")
 )
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 
 // ValidarJWTEntrante es el filtro BeforeRouter de todas las rutas /v1/*. Si el token
 // falta o es inválido responde 401 con el envelope OATI y corta el request.

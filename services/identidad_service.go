@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // UserRol es la identidad que devuelve autenticacion_mid/token/userRol a partir del

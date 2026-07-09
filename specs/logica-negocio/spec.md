@@ -1,4 +1,4 @@
-# Spec — API MID (`sga_mid_beneficios_egresados`)
+# Spec — API MID (`egresados_service`)
 
 > **Última actualización:** 2026-07-08 · **Estado:** implementado y probado e2e.
 > Deriva del `BACKEND_SPEC.md` original, actualizado al contrato real (router
@@ -20,7 +20,7 @@ notificaciones (pendiente, ver `tasks.md`).
 
 ## Repos involucrados
 
-- `sga_mid_beneficios_egresados` (este) — Go + Beego.
+- `egresados_service` (este) — Go + Beego.
 - Consume: CRUD local, Parametros, autenticacion_mid, oauth2/userinfo, administrativa_amazon_api, terceros_crud, sga_mid (consultar_persona), gestor_documental_mid.
 
 ## Endpoints (contrato vigente, prefijo `/v1`, todos con Bearer)
@@ -87,7 +87,7 @@ notificaciones (pendiente, ver `tasks.md`).
 - **Hacia el frontend:** envelope OATI `{Status, Success, Body|Message}`; errores de negocio 422; acceso denegado 403; token inválido 401.
 - **Hacia el CRUD:** helpers `GetCRUD/PostCRUD/PutCRUD` (Bearer propagado, status validado, `[{}]`→`[]` normalizado). Relaciones como `{id}`; ids de parámetro planos.
 - **Gestor documental** (`gestor_documental_mid`): `POST /document/upload` con body `[{IdTipoDocumento: 167, file: base64, nombre, descripcion, metadatos: {}}]` → respuesta **objeto** `{Status, res:{Enlace: uid}}` (NO array; endpoint correcto es `upload`, no `uploadAnyFormat`; `metadatos` SIEMPRE `{}` — con contenido el servicio da 422/timeout). Consultar `GET /document/{uid}`; eliminar `DELETE /document/{uid}`. La relación solicitud↔documento vive en la tabla local `documento_solicitud`.
-- **Env:** `BENEFICIOS_EGRESADOS_MID_{CRUD,PARAMETROS,AUTENTICACION,AMAZON,USERINFO,TERCEROS,SGA_MID,GESTOR_DOCUMENTAL,JWKS}_URL`, `_PORT` (dev: 8081), `_RUNMODE`, `_VALIDAR_JWT` (solo dev), `_PARAMETROS_LOCAL` (solo offline).
+- **Env:** `EGRESADOS_SERVICE_{CRUD,PARAMETROS,AUTENTICACION,AMAZON,USERINFO,TERCEROS,SGA_MID,GESTOR_DOCUMENTAL,JWKS}_URL`, `_PORT` (dev: 8081), `_RUNMODE`, `_VALIDAR_JWT` (solo dev), `_PARAMETROS_LOCAL` (solo offline).
 
 ## Criterios de aceptación
 

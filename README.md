@@ -1,4 +1,4 @@
-# sga_mid_beneficios_egresados
+# egresados_service
 
 API MID (lógica de negocio) del submódulo **Beneficios para Egresados** del Sistema
 de Gestión Académica (SGA) de la Universidad Distrital Francisco José de Caldas.
@@ -11,11 +11,12 @@ Capas hermanas:
 [`egresados_cliente`](https://github.com/udistrital/egresados_cliente)
 (micro-frontend).
 
-## Especificaciones técnicas
+## Especificaciones Técnicas
 
-- **Go** 1.22 · **Beego** v2.2
-- Sin acceso directo a base de datos: todo pasa por el CRUD del módulo o por
-  servicios institucionales vía HTTP
+### Tecnologías Implementadas y Versiones
+* Golang 1.22 (imagen de CI en `golang:1.25`, compatible hacia atrás)
+* BeeGo v2.2 (`server/web`, sin acceso directo a base de datos: todo pasa por el
+  CRUD del módulo o por servicios institucionales vía HTTP)
 
 ### Responsabilidades clave
 
@@ -34,26 +35,81 @@ Capas hermanas:
   `cupos_disponibles > 0`; filtros por categoría/empresa y búsqueda por título,
   todo delegado al CRUD vía `query=`.
 
-## Variables de entorno
+### Variables de Entorno
 
-| Variable | Default | Descripción |
-|---|---|---|
-| `BENEFICIOS_EGRESADOS_MID_CRUD_URL` | `http://localhost:8080/v1` | URL del CRUD del módulo |
-| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1` | Servicio institucional de parámetros |
-| `BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1` | autenticacion_mid (userRol) |
-| `BENEFICIOS_EGRESADOS_MID_AMAZON_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1` | Datos de proveedor/empresa (C-2b) |
-| `BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL` | `https://autenticacion.portaloas.udistrital.edu.co/apioas/gestor_documental_mid/v1` | Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de solicitudes. El cliente Angular nunca lo llama directo, solo el MID (`IdTipoDocumento=167` fijo) |
-| `BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL` | `false` | **Solo dev/offline**: si `true`, resuelve los parámetros desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. El seed local usa los MISMOS ids institucionales (7199+), así que modo local y real son intercambiables. |
-| `BENEFICIOS_EGRESADOS_MID_PORT` | `8080` | Puerto HTTP (en desarrollo local se usa `8081` para no chocar con el CRUD) |
-| `BENEFICIOS_EGRESADOS_MID_RUNMODE` | `dev` | Modo de ejecución de Beego |
+Definidas en [`conf/app.conf`](conf/app.conf) vía `${VAR||default}` (expansión nativa
+de Beego); las claves `*Service` quedan disponibles en `web.AppConfig`.
 
-## Ejecución
+| Variable | Clave en app.conf | Default | Descripción |
+|---|---|---|---|
+| `EGRESADOS_SERVICE_CRUD_URL` | `CrudService` | `http://localhost:8080/v1` | URL del CRUD del módulo (`egresados_crud`) |
+| `EGRESADOS_SERVICE_AUTENTICACION_URL` | `AutenticacionService` | `.../apioas/autenticacion_mid/v1` | autenticacion_mid (userRol) |
+| `EGRESADOS_SERVICE_PARAMETROS_URL` | `ParametrosService` | `.../apioas/parametros/v1` | Servicio institucional de parámetros |
+| `EGRESADOS_SERVICE_AMAZON_URL` | `AmazonService` | `.../apioas/administrativa_amazon_api/v1` | Datos de proveedor/empresa (C-2b) |
+| `EGRESADOS_SERVICE_USERINFO_URL` | `Wso2UserService` | `.../oauth2/userinfo` | OIDC userinfo — identidad del dueño del token |
+| `EGRESADOS_SERVICE_JWKS_URL` | `Wso2JwksService` | `.../oauth2/jwks` | JWKS de WSO2 para validar la firma RS256 del JWT entrante |
+| `EGRESADOS_SERVICE_TERCEROS_URL` | `TercerosService` | `.../apioas/terceros_crud/v1` | Identidad institucional del egresado (C-2a) |
+| `EGRESADOS_SERVICE_SGA_MID_URL` | `SgaMidService` | `.../apioas/sga_mid/v1` | `consultar_persona` (C-2a) |
+| `EGRESADOS_SERVICE_GESTOR_DOCUMENTAL_URL` | `GestorDocumentalService` | `.../apioas/gestor_documental_mid/v1` | Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de solicitudes. El cliente Angular nunca lo llama directo, solo el MID (`IdTipoDocumento=167` fijo) |
+| `EGRESADOS_SERVICE_VALIDAR_JWT` | `ValidarJWT` | `true` | **Solo dev**: `false` desactiva la validación del JWT entrante (sin conectividad al JWKS/userinfo) |
+| `EGRESADOS_SERVICE_PARAMETROS_LOCAL` | `ParametrosLocal` | `false` | **Solo dev/offline**: si `true`, resuelve los parámetros desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. El seed local usa los MISMOS ids institucionales (7199+), así que modo local y real son intercambiables. |
+| `EGRESADOS_SERVICE_HTTP_PORT` | `httpport` | `8081` | Puerto HTTP (distinto del `8080` del CRUD para poder correr ambos en local) |
+| `EGRESADOS_SERVICE_RUNMODE` | `runmode` | `prod` | Modo de ejecución de Beego (`prod`\|`dev`) |
+| `PARAMETER_STORE` | `parameterStore` | _(vacío)_ | Endpoint del AWS SSM Parameter Store institucional |
 
-```bash
-# requiere el CRUD corriendo (ver su README)
-export BENEFICIOS_EGRESADOS_MID_PORT=8081
-go run .
+### Ejecución del Proyecto
+```shell
+# 1. Clonar el repositorio
+git clone -b develop https://github.com/udistrital/egresados_service.git
+
+# 2. Moverse a la carpeta del repositorio
+cd egresados_service
+
+# 3. Moverse a la rama **develop**
+git pull origin develop && git checkout develop
+
+# 4. Requiere el CRUD corriendo (ver README de egresados_crud) y configurar
+#    las variables de entorno que se necesiten (ver tabla arriba)
+export EGRESADOS_SERVICE_RUNMODE=dev
+export EGRESADOS_SERVICE_PARAMETROS_LOCAL=true   # si el catálogo institucional aún no existe
+
+# 5. Ejecutar el proyecto
+bee run
 ```
+
+### Ejecución Dockerfile
+```shell
+# El Dockerfile está implementado para el despliegue mediante
+# el sistema de integración continua (CI).
+
+# 1. Construir la imagen
+docker build -t egresados_service .
+
+# 2. Ejecutar el contenedor
+docker run --name egresados_service \
+  -e EGRESADOS_SERVICE_RUNMODE=dev \
+  -e EGRESADOS_SERVICE_CRUD_URL=http://host.docker.internal:8080/v1 \
+  -e EGRESADOS_SERVICE_PARAMETROS_LOCAL=true \
+  -p 8081:8081 \
+  egresados_service
+
+# 3. Comprobar que el contenedor esté en ejecución
+docker ps
+```
+
+### Ejecución docker-compose
+```shell
+# No implementado actualmente.
+```
+
+## Estado CI
+
+| Develop | Master |
+| -- | -- |
+| [![Build Status](https://hubci.portaloas.udistrital.edu.co/api/badges/udistrital/egresados_service/status.svg?ref=refs/heads/develop)](https://hubci.portaloas.udistrital.edu.co/udistrital/egresados_service) | [![Build Status](https://hubci.portaloas.udistrital.edu.co/api/badges/udistrital/egresados_service/status.svg?ref=refs/heads/master)](https://hubci.portaloas.udistrital.edu.co/udistrital/egresados_service) |
+
+> Sin Sonar por ahora: el `.drone.yml` de este repo no incluye el step de
+> `sonar-scanner` (a diferencia de `egresados_crud`).
 
 ## Endpoints (`/v1`)
 
@@ -96,6 +152,9 @@ GET    /documentos/:doc_id/archivo                 ver/descargar (proxy de solo 
 GET    /solicitudes/:id/comprobante                comprobante OPCIONAL adjuntado por la empresa al aprobar
 ```
 
+Documentación interactiva (Swagger UI, generada con `bee generate docs`):
+[`swagger/`](swagger/), servida en `/swagger/` cuando `EnableDocs = true`.
+
 ### Documentos requeridos por beneficio
 
 Al publicar un beneficio (`POST /empresas/:empresa_id/beneficios`), la empresa puede incluir
@@ -133,7 +192,8 @@ comprobante en cualquier transición que no sea APROBADA es un error (400).
   RS256 contra el JWKS de WSO2; tokens opacos contra userinfo (401 si inválido).
 - Autorización por recurso (`services/autorizacion_service.go`): cada operación
   verifica el vínculo del usuario del token con el recurso (403 si es ajeno).
-- Pendientes: ver `specs/logica-negocio/tasks.md`.
+- Pendientes: ver `specs/logica-negocio/tasks.md`. No hay pruebas automatizadas
+  todavía (`go test ./...` no tiene casos definidos).
 
 ## Documentación (SDD)
 
@@ -148,3 +208,18 @@ comprobante en cualquier transición que no sea APROBADA es un error (400).
 Desarrollado en el marco de la pasantía de Ingeniería de Sistemas (2026) para la
 Oficina Asesora de Sistemas (OAS) / OATI. Lineamientos: APIs separadas CRUD/MID,
 plantillas `udistrital/plantilla_api_mid`, autenticación OAuth2/OIDC sobre WSO2.
+
+## Licencia
+
+This file is part of egresados_service.
+
+egresados_service is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+
+egresados_service is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+egresados_service. If not, see https://www.gnu.org/licenses/.

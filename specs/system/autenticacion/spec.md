@@ -22,7 +22,7 @@ gestión de roles/menús del SGA (D-8, trámite OATI).
 ## Repos involucrados
 
 - `sga_cliente_beneficios_egresados_mf` — login OIDC implicit, sesión, guards.
-- `sga_mid_beneficios_egresados` — JIT, validación JWT, autorización, propagación.
+- `egresados_service` — JIT, validación JWT, autorización, propagación.
 - (El CRUD no valida auth; recibe el token de forma uniforme para un futuro filtro.)
 
 ## Requisitos funcionales
@@ -32,7 +32,7 @@ gestión de roles/menús del SGA (D-8, trámite OATI).
 3. **JIT de egresado** (`POST /v1/egresados/provision`, sin body): userinfo(token) → userRol → documento (userinfo, fallback userRol) → nombre real vía `terceros_crud` (best-effort) → código institucional (`userRol.Codigo`, fallback `consultar_persona`) → alta idempotente de `usuario` (EGR) + `egresado`.
 4. **JIT de empresa** (`POST /v1/empresas/provision`, sin body): userinfo(token) → userRol (rechaza egresados) → `informacion_proveedor?query=correo:{email}` → por cada proveedor, amarre de identidad y alta idempotente de `usuario` (EMP) + `empresa` + `usuario_empresa`. Multiempresa: itera todos los proveedores del correo; devuelve la lista completa (incluye `nit` por empresa).
 5. **La identidad SIEMPRE se deriva del token** (endpoint `oauth2/userinfo` → `{sub, email, documento?}`), nunca del body: un usuario autenticado no puede provisionar la identidad de otro correo.
-6. **Validación del token entrante en el MID** (`middleware/jwt.go`, filtro BeforeRouter en `/v1/*`): JWT → firma RS256 contra el JWKS de WSO2 + exp/nbf (JWKS cacheado, recarga por rotación de kid máx. 1/min, SOLO RS256); token opaco → userinfo con caché positiva de 5 min. Sin token o inválido → 401 con envelope OATI. Toggle solo-dev `BENEFICIOS_EGRESADOS_MID_VALIDAR_JWT=false`.
+6. **Validación del token entrante en el MID** (`middleware/jwt.go`, filtro BeforeRouter en `/v1/*`): JWT → firma RS256 contra el JWKS de WSO2 + exp/nbf (JWKS cacheado, recarga por rotación de kid máx. 1/min, SOLO RS256); token opaco → userinfo con caché positiva de 5 min. Sin token o inválido → 401 con envelope OATI. Toggle solo-dev `EGRESADOS_SERVICE_VALIDAR_JWT=false`.
 7. **Propagación saliente:** el MID propaga el Bearer del request entrante a TODAS las llamadas salientes (CRUD, parámetros, terceros, Ágora, gestor documental). El token se threadea controller→service→helper (request-scoped, sin variable global). Motivo: todo el gateway exige Bearer y el token de usuario expira ~1h (no sirve como token estático de servicio).
 8. **Autorización por recurso (anti-IDOR)** (`services/autorizacion_service.go`): identidad del token (userinfo → `sub` → `usuario` local por `id_externo`) y verificación de vínculo antes de operar. Familias: empresa (bandeja, mis-beneficios, publicar/editar/retirar, responder, comentar), egresado (mis-solicitudes, resumen, crear, cancelar, subir/eliminar documento) y bidireccionales (mensajes, documentos, comprobante = egresado dueño O usuario de la empresa del beneficio). Acceso denegado → 403.
 

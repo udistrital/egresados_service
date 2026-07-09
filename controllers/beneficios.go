@@ -4,15 +4,22 @@ import (
 	"encoding/json"
 
 	"github.com/beego/beego/v2/server/web"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
-	"github.com/udistrital/sga_mid_beneficios_egresados/services"
+	"github.com/udistrital/egresados_service/helpers"
+	"github.com/udistrital/egresados_service/services"
 )
 
 type BeneficiosController struct{ web.Controller }
 
-// GetCatalogo GET /v1/beneficios
-// Catálogo paginado con filtros. Solo PUBLICADO, fecha_fin >= hoy, cupos > 0 (RN-008).
-// Params: page, limit, categoria_id, empresa_id, q
+// @Title GetCatalogo
+// @Description Catálogo paginado de beneficios. Solo PUBLICADO, fecha_fin >= hoy, cupos_disponibles > 0 (RN-008).
+// @Param   page           query   int     false   "página (default 1)"
+// @Param   limit          query   int     false   "tamaño de página (default 20)"
+// @Param   categoria_id   query   int     false   "filtro por categoría"
+// @Param   empresa_id     query   int     false   "filtro por empresa"
+// @Param   q              query   string  false   "búsqueda por título"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 500 error interno (CRUD o servicio de parámetros caído)
+// @router /beneficios [get]
 func (c *BeneficiosController) GetCatalogo() {
 	page, _ := c.GetInt("page", 1)
 	limit, _ := c.GetInt("limit", 20)
@@ -29,8 +36,13 @@ func (c *BeneficiosController) GetCatalogo() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetOne GET /v1/beneficios/:id
-// Detalle de un beneficio.
+// @Title GetOne
+// @Description Detalle de un beneficio.
+// @Param   id    path    int    true    "id del beneficio"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 404 no encontrado
+// @router /beneficios/:id [get]
 func (c *BeneficiosController) GetOne() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -45,9 +57,14 @@ func (c *BeneficiosController) GetOne() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetByEmpresa GET /v1/empresas/:empresa_id/beneficios
-// Vista de gestión del dueño: TODOS sus beneficios (cualquier estado) con
-// métricas de solicitudes.
+// @Title GetByEmpresa
+// @Description Vista de gestión del dueño: TODOS sus beneficios (cualquier estado) con métricas de solicitudes.
+// @Param   empresa_id    path    int    true    "id de la empresa"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 empresa_id inválido
+// @Failure 403 el usuario del token no tiene acceso a esa empresa
+// @Failure 500 error interno
+// @router /empresas/:empresa_id/beneficios [get]
 func (c *BeneficiosController) GetByEmpresa() {
 	empresaId, err := c.GetInt(":empresa_id")
 	if err != nil {
@@ -68,8 +85,15 @@ func (c *BeneficiosController) GetByEmpresa() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// Publicar POST /v1/empresas/:empresa_id/beneficios
-// Publicar un beneficio. Solo si empresa = ACTIVA. Valida RN-008b.
+// @Title Publicar
+// @Description Publicar un beneficio. Solo si empresa = ACTIVA. Valida RN-008b.
+// @Param   empresa_id    path    int                       true    "id de la empresa"
+// @Param   body          body    string   true    "JSON con los campos del beneficio a publicar"
+// @Success 201 {object} helpers.APIResponse
+// @Failure 400 empresa_id o body inválido
+// @Failure 403 el usuario del token no tiene acceso a esa empresa
+// @Failure 422 la empresa no está ACTIVA u otra regla de negocio (RN-008b)
+// @router /empresas/:empresa_id/beneficios [post]
 func (c *BeneficiosController) Publicar() {
 	empresaId, err := c.GetInt(":empresa_id")
 	if err != nil {
@@ -97,8 +121,13 @@ func (c *BeneficiosController) Publicar() {
 	helpers.Created(&c.Controller, result)
 }
 
-// GetDocumentosRequeridos GET /v1/beneficios/:id/documentos-requeridos
-// Documentos que la empresa exige para postularse (definidos al publicar).
+// @Title GetDocumentosRequeridos
+// @Description Documentos que la empresa exige para postularse (definidos al publicar).
+// @Param   id    path    int    true    "id del beneficio"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 500 error interno
+// @router /beneficios/:id/documentos-requeridos [get]
 func (c *BeneficiosController) GetDocumentosRequeridos() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -114,8 +143,15 @@ func (c *BeneficiosController) GetDocumentosRequeridos() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// Editar PUT /v1/beneficios/:id
-// Editar beneficio (solo borradores o publicados sin solicitudes activas).
+// @Title Editar
+// @Description Editar beneficio (solo borradores o publicados sin solicitudes activas).
+// @Param   id      path    int                       true    "id del beneficio"
+// @Param   body    body    string   true    "JSON con los campos a actualizar"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id o body inválido
+// @Failure 403 el usuario del token no tiene acceso a ese beneficio
+// @Failure 422 el beneficio no se puede editar en su estado actual
+// @router /beneficios/:id [put]
 func (c *BeneficiosController) Editar() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -142,8 +178,14 @@ func (c *BeneficiosController) Editar() {
 	helpers.Ok(&c.Controller, "beneficio actualizado")
 }
 
-// Retirar PUT /v1/beneficios/:id/retirar
-// El "cerrar" de la empresa: pasa el beneficio a RETIRADO (sale del catálogo).
+// @Title Retirar
+// @Description El "cerrar" de la empresa: pasa el beneficio a RETIRADO (sale del catálogo).
+// @Param   id    path    int    true    "id del beneficio"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 403 el usuario del token no tiene acceso a ese beneficio
+// @Failure 422 el beneficio no se puede retirar en su estado actual
+// @router /beneficios/:id/retirar [put]
 func (c *BeneficiosController) Retirar() {
 	id, err := c.GetInt(":id")
 	if err != nil {

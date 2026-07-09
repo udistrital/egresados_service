@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // relId extrae el id de una relación anidada del CRUD (p. ej. s["documento_requerido"] = {"id": N, ...}).

@@ -6,34 +6,31 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
+
+	"github.com/beego/beego/v2/server/web"
 )
 
+// Ninguna URL trae default quemado: todas se alimentan por conf/app.conf (env vars).
+// Si falta la variable de entorno, el endpoint queda vacío y la llamada HTTP falla
+// explícito (esquema faltante) en vez de pegarle en silencio a un servicio real.
 var (
-	crudURL       = getEnv("BENEFICIOS_EGRESADOS_MID_CRUD_URL", "http://localhost:8080/v1")
-	authURL       = getEnv("BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/autenticacion_mid/v1")
-	parametrosURL = getEnv("BENEFICIOS_EGRESADOS_MID_PARAMETROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/parametros/v1")
+	crudURL       = web.AppConfig.DefaultString("CrudService", "")
+	authURL       = web.AppConfig.DefaultString("AutenticacionService", "")
+	parametrosURL = web.AppConfig.DefaultString("ParametrosService", "")
 	// Datos de proveedor/empresa (C-2b). OJO: es administrativa_amazon_api, NO agora_crud.
-	amazonURL = getEnv("BENEFICIOS_EGRESADOS_MID_AMAZON_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/administrativa_amazon_api/v1")
+	amazonURL = web.AppConfig.DefaultString("AmazonService", "")
 	// OIDC userinfo: identidad del dueño del token (sin pasar email). OJO: NO va bajo
 	// /apioas, es endpoint directo de WSO2.
-	userinfoURL = getEnv("BENEFICIOS_EGRESADOS_MID_USERINFO_URL", "https://autenticacion.portaloas.udistrital.edu.co/oauth2/userinfo")
+	userinfoURL = web.AppConfig.DefaultString("Wso2UserService", "")
 	// Identidad institucional del egresado (C-2a): nombre real y TerceroId por documento.
-	tercerosURL = getEnv("BENEFICIOS_EGRESADOS_MID_TERCEROS_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/terceros_crud/v1")
+	tercerosURL = web.AppConfig.DefaultString("TercerosService", "")
 	// consultar_persona (C-2a) vive en sga_mid/v1, NO en derecho_pecunario_mid.
-	sgaMidURL = getEnv("BENEFICIOS_EGRESADOS_MID_SGA_MID_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/sga_mid/v1")
+	sgaMidURL = web.AppConfig.DefaultString("SgaMidService", "")
 	// Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de las
 	// solicitudes. El cliente Angular nunca llama a este servicio directamente, solo el MID.
-	gestorDocumentalURL = getEnv("BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL", "https://autenticacion.portaloas.udistrital.edu.co/apioas/gestor_documental_mid/v1")
+	gestorDocumentalURL = web.AppConfig.DefaultString("GestorDocumentalService", "")
 )
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 
 // doRequest realiza una petición HTTP propagando el token del usuario (Bearer del
 // request entrante). El gateway institucional (parámetros, autenticacion_mid, Ágora)

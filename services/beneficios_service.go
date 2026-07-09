@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // GetCatalogoBeneficios devuelve el catálogo paginado con filtros (RN-008, RN-FILTROS).

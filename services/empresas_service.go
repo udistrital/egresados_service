@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // EmpresaProvisionada es cada empresa a la que el usuario queda vinculado tras el JIT.
