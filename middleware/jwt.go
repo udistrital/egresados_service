@@ -34,7 +34,9 @@ import (
 
 var (
 	validarActivo = web.AppConfig.DefaultString("ValidarJWT", "true") != "false"
-	jwksURL       = web.AppConfig.DefaultString("Wso2JwksService", "https://autenticacion.portaloas.udistrital.edu.co/oauth2/jwks")
+	// Sin default quemado: si EGRESADOS_SERVICE_JWKS_URL no está seteada, la
+	// consulta al JWKS falla explícito en vez de pegarle en silencio al WSO2 real.
+	jwksURL = web.AppConfig.DefaultString("Wso2JwksService", "")
 )
 
 // ValidarJWTEntrante es el filtro BeforeRouter de todas las rutas /v1/*. Si el token
