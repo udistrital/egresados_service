@@ -21,3 +21,6 @@ vendor/
 .env
 .env.*
 !.env.example
+
+# Pruebas Karate (artefactos de Maven)
+tests/karate/target/
