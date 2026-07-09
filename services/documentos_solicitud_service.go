@@ -121,12 +121,14 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 		enlaceAnterior := asString(firstOf(existente, "enlace_gestor_documental", "EnlaceGestorDocumental"))
 		_ = EliminarDocumentoGestor(token, enlaceAnterior)
 
+		// El PUT del CRUD reemplaza la fila ENTERA (o.Update sin lista de columnas):
+		// se parte del row completo con las relaciones normalizadas a {id}, nunca de
+		// un payload parcial (las FK llegarían NULL). Mismo patrón que EditarBeneficio.
 		docId := toInt(firstOf(existente, "id", "Id"))
-		payload := map[string]interface{}{
-			"nombre_archivo":           nombreArchivo,
-			"enlace_gestor_documental": enlace,
-		}
-		if err := helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", docId), payload); err != nil {
+		doc := documentoParaPut(existente)
+		doc["nombre_archivo"] = nombreArchivo
+		doc["enlace_gestor_documental"] = enlace
+		if err := helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", docId), doc); err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"id": docId}, nil
@@ -164,15 +166,37 @@ func EliminarDocumentoSolicitud(token string, solicitudId, documentoSolicitudId 
 
 // ComentarDocumento registra (o reemplaza) la observación de la empresa sobre un
 // documento subido por el egresado. Campo único: no lleva historial de comentarios.
+// El PUT del CRUD reemplaza la fila entera, así que se lee el documento completo
+// y se sobreescriben solo los campos del comentario (un payload parcial dejaba la
+// FK solicitud_beneficio en NULL — hallazgo de la suite Karate, 2026-07-09).
 func ComentarDocumento(token string, documentoSolicitudId int, comentario string) error {
 	if comentario == "" {
 		return fmt.Errorf("el comentario no puede estar vacío")
 	}
-	payload := map[string]interface{}{
-		"comentario_empresa": comentario,
-		"fecha_comentario":   time.Now().Format(time.RFC3339),
+	var existente map[string]interface{}
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), &existente); err != nil {
+		return fmt.Errorf("documento no encontrado: %v", err)
 	}
-	return helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), payload)
+	doc := documentoParaPut(existente)
+	doc["comentario_empresa"] = comentario
+	doc["fecha_comentario"] = time.Now().Format(time.RFC3339)
+	return helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), doc)
+}
+
+// documentoParaPut prepara un documento_solicitud leído del CRUD para un PUT de
+// fila completa: normaliza las relaciones anidadas a la forma {id} que espera el
+// unmarshal del CRUD.
+func documentoParaPut(doc map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(doc))
+	for k, v := range doc {
+		out[k] = v
+	}
+	for _, rel := range []string{"solicitud_beneficio", "documento_requerido"} {
+		if id := relId(out, rel); id > 0 {
+			out[rel] = map[string]interface{}{"id": id}
+		}
+	}
+	return out
 }
 
 // GetArchivoDocumento devuelve el nombre y el contenido en base64 de un documento
