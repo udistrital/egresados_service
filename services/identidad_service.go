@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // UserRol es la identidad que devuelve autenticacion_mid/token/userRol a partir del
@@ -16,7 +16,7 @@ type UserRol struct {
 	DocumentoCompuesto string   `json:"documento_compuesto"`
 	Email              string   `json:"email"`
 	FamilyName         string   `json:"FamilyName"`
-	Codigo             string   `json:"Codigo"`  // código estudiantil (solo egresados)
+	Codigo             string   `json:"Codigo"` // código estudiantil (solo egresados)
 	Estado             string   `json:"Estado"` // "E" = egresado; distinto de E = empresa
 }
 

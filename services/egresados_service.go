@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // ProvisionEgresadoResult es el resultado del JIT provisioning de un egresado.
@@ -14,6 +14,9 @@ type ProvisionEgresadoResult struct {
 	EgresadoId          int    `json:"egresado_id"`
 	CodigoInstitucional string `json:"codigo_institucional"`
 	Nombre              string `json:"nombre,omitempty"`
+	// Carrera viene de academica_jbpm (SGA), on-demand — best-effort: si el
+	// servicio falla o no reconoce el código, queda vacío y la UI cae a '—'.
+	Carrera string `json:"carrera,omitempty"`
 }
 
 // ProvisionarEgresado hace el JIT provisioning del egresado al primer login
@@ -73,11 +76,19 @@ func ProvisionarEgresado(token string) (*ProvisionEgresadoResult, error) {
 		return nil, err
 	}
 
+	// Best-effort: la carrera es un enriquecimiento de academica_jbpm, nunca debe
+	// tumbar el login si el servicio falla o no reconoce el código.
+	carrera, err := ResolverCarrera(token, codigo)
+	if err != nil {
+		carrera = ""
+	}
+
 	return &ProvisionEgresadoResult{
 		UsuarioId:           usuarioId,
 		EgresadoId:          egresadoId,
 		CodigoInstitucional: codigo,
 		Nombre:              nombre,
+		Carrera:             carrera,
 	}, nil
 }
 

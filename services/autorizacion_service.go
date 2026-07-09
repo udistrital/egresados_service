@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // ErrAccesoDenegado marca los errores de autorización (anti-IDOR): el dueño del

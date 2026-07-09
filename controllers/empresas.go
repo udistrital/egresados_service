@@ -4,16 +4,17 @@ import (
 	"fmt"
 
 	"github.com/beego/beego/v2/server/web"
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
-	"github.com/udistrital/sga_mid_beneficios_egresados/services"
+	"github.com/udistrital/egresados_service/helpers"
+	"github.com/udistrital/egresados_service/services"
 )
 
 type EmpresasController struct{ web.Controller }
 
-// Provisionar POST /v1/empresas/provision
-// JIT provisioning del usuario de empresa al primer login (C-2b/c): resuelve su
-// identidad (desde el token vía OIDC userinfo) y sus proveedores en Ágora, y da de alta
-// usuario/empresa/usuario_empresa. No recibe body: la identidad sale del token.
+// @Title Provisionar
+// @Description JIT provisioning del usuario de empresa al primer login (C-2b/c): resuelve su identidad (desde el token vía OIDC userinfo) y sus proveedores en Ágora, y da de alta usuario/empresa/usuario_empresa. No recibe body: la identidad sale del token.
+// @Success 200 {object} helpers.APIResponse
+// @Failure 422 no se pudo resolver la identidad o el proveedor en Ágora
+// @router /empresas/provision [post]
 func (c *EmpresasController) Provisionar() {
 	result, err := services.ProvisionarEmpresa(c.Ctx.Input.Header("Authorization"))
 	if err != nil {
@@ -23,8 +24,14 @@ func (c *EmpresasController) Provisionar() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetEmpresasDeUsuario GET /v1/usuarios/:usuario_id/empresas
-// Empresas a las que el usuario tiene acceso (selector multiempresa, caso 1:N).
+// @Title GetEmpresasDeUsuario
+// @Description Empresas a las que el usuario tiene acceso (selector multiempresa, caso 1:N).
+// @Param   usuario_id    path    int    true    "id del usuario"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 usuario_id inválido
+// @Failure 403 el usuario_id no coincide con el del token
+// @Failure 500 error interno
+// @router /usuarios/:usuario_id/empresas [get]
 func (c *EmpresasController) GetEmpresasDeUsuario() {
 	usuarioId, err := c.GetInt(":usuario_id")
 	if err != nil {
@@ -46,9 +53,13 @@ func (c *EmpresasController) GetEmpresasDeUsuario() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetPerfil GET /v1/empresas/:id
-// Perfil público de la empresa (razón social, descripción/web/dirección de Ágora
-// on-demand, métricas de beneficios). Whitelist RNF-002b — sin NIT ni datos bancarios.
+// @Title GetPerfil
+// @Description Perfil público de la empresa (razón social, descripción/web/dirección de Ágora on-demand, métricas de beneficios). Whitelist RNF-002b — sin NIT ni datos bancarios.
+// @Param   id    path    int    true    "id de la empresa"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 id inválido
+// @Failure 404 no encontrada
+// @router /empresas/:id [get]
 func (c *EmpresasController) GetPerfil() {
 	id, err := c.GetInt(":id")
 	if err != nil {
@@ -64,8 +75,14 @@ func (c *EmpresasController) GetPerfil() {
 	helpers.Ok(&c.Controller, result)
 }
 
-// GetBandeja GET /v1/empresas/:empresa_id/solicitudes
-// Bandeja de solicitudes recibidas. Solo campos mínimos del egresado (RNF-002b / Ley 1581).
+// @Title GetBandeja
+// @Description Bandeja de solicitudes recibidas. Solo campos mínimos del egresado (RNF-002b / Ley 1581).
+// @Param   empresa_id    path    int    true    "id de la empresa"
+// @Success 200 {object} helpers.APIResponse
+// @Failure 400 empresa_id inválido
+// @Failure 403 el usuario del token no tiene acceso a esa empresa
+// @Failure 500 error interno
+// @router /empresas/:empresa_id/solicitudes [get]
 func (c *EmpresasController) GetBandeja() {
 	empresaId, err := c.GetInt(":empresa_id")
 	if err != nil {

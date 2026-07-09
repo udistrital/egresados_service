@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/udistrital/sga_mid_beneficios_egresados/helpers"
+	"github.com/udistrital/egresados_service/helpers"
 )
 
 // relId extrae el id de una relación anidada del CRUD (p. ej. s["documento_requerido"] = {"id": N, ...}).
@@ -135,9 +135,9 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 	}
 
 	payload := map[string]interface{}{
-		"solicitud_beneficio":     map[string]interface{}{"id": solicitudId},
-		"documento_requerido":     map[string]interface{}{"id": documentoRequeridoId},
-		"nombre_archivo":          nombreArchivo,
+		"solicitud_beneficio":      map[string]interface{}{"id": solicitudId},
+		"documento_requerido":      map[string]interface{}{"id": documentoRequeridoId},
+		"nombre_archivo":           nombreArchivo,
 		"enlace_gestor_documental": enlace,
 	}
 	var result interface{}

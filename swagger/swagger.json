@@ -1,0 +1,1092 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "basePath": "/v1",
+    "paths": {
+        "/beneficios": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Catálogo paginado de beneficios. Solo PUBLICADO, fecha_fin \u003e= hoy, cupos_disponibles \u003e 0 (RN-008).\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.GetCatalogo",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "page",
+                        "description": "página (default 1)",
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "description": "tamaño de página (default 20)",
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "query",
+                        "name": "categoria_id",
+                        "description": "filtro por categoría",
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "query",
+                        "name": "empresa_id",
+                        "description": "filtro por empresa",
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "description": "búsqueda por título",
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "error interno (CRUD o servicio de parámetros caído)"
+                    }
+                }
+            }
+        },
+        "/beneficios/{id}": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Detalle de un beneficio.\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.GetOne",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id del beneficio",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "404": {
+                        "description": "no encontrado"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Editar beneficio (solo borradores o publicados sin solicitudes activas).\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.Editar",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id del beneficio",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON con los campos a actualizar",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a ese beneficio"
+                    },
+                    "422": {
+                        "description": "el beneficio no se puede editar en su estado actual"
+                    }
+                }
+            }
+        },
+        "/beneficios/{id}/documentos-requeridos": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Documentos que la empresa exige para postularse (definidos al publicar).\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.GetDocumentosRequeridos",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id del beneficio",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/beneficios/{id}/retirar": {
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "El \"cerrar\" de la empresa: pasa el beneficio a RETIRADO (sale del catálogo).\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.Retirar",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id del beneficio",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a ese beneficio"
+                    },
+                    "422": {
+                        "description": "el beneficio no se puede retirar en su estado actual"
+                    }
+                }
+            }
+        },
+        "/categorias-beneficio": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersCatalogosController"
+                ],
+                "description": "Catálogo de categorías de beneficio (servicio institucional de parámetros, o local si ParametrosLocal=true).\n\u003cbr\u003e",
+                "operationId": "CatalogosController.GetCategorias",
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/documentos/{doc_id}/archivo": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Proxy de solo lectura hacia el gestor documental: el cliente nunca llama a ese servicio directamente. Devuelve { nombre_archivo, file (base64) }.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetArchivoDocumento",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "doc_id",
+                        "description": "id del documento",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "doc_id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa del documento"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/documentos/{doc_id}/comentario": {
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "La empresa deja una observación sobre un documento subido por el egresado.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.ComentarDocumento",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "doc_id",
+                        "description": "id del documento",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON { comentario }",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "doc_id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a ese documento"
+                    },
+                    "422": {
+                        "description": "error de negocio"
+                    }
+                }
+            }
+        },
+        "/egresados/provision": {
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersEgresadosController"
+                ],
+                "description": "JIT provisioning del egresado al primer login (contraparte del de empresa): resuelve su identidad desde el token (OIDC userinfo → userRol → terceros_crud) y da de alta usuario/egresado locales. No recibe body: la identidad sale del token.\n\u003cbr\u003e",
+                "operationId": "EgresadosController.Provisionar",
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "no se pudo resolver la identidad del egresado"
+                    }
+                }
+            }
+        },
+        "/empresas/provision": {
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersEmpresasController"
+                ],
+                "description": "JIT provisioning del usuario de empresa al primer login (C-2b/c): resuelve su identidad (desde el token vía OIDC userinfo) y sus proveedores en Ágora, y da de alta usuario/empresa/usuario_empresa. No recibe body: la identidad sale del token.\n\u003cbr\u003e",
+                "operationId": "EmpresasController.Provisionar",
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "no se pudo resolver la identidad o el proveedor en Ágora"
+                    }
+                }
+            }
+        },
+        "/empresas/{empresa_id}/beneficios": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Vista de gestión del dueño: TODOS sus beneficios (cualquier estado) con métricas de solicitudes.\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.GetByEmpresa",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "empresa_id",
+                        "description": "id de la empresa",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "empresa_id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a esa empresa"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersBeneficiosController"
+                ],
+                "description": "Publicar un beneficio. Solo si empresa = ACTIVA. Valida RN-008b.\n\u003cbr\u003e",
+                "operationId": "BeneficiosController.Publicar",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "empresa_id",
+                        "description": "id de la empresa",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON con los campos del beneficio a publicar",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "empresa_id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a esa empresa"
+                    },
+                    "422": {
+                        "description": "la empresa no está ACTIVA u otra regla de negocio (RN-008b)"
+                    }
+                }
+            }
+        },
+        "/empresas/{empresa_id}/solicitudes": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersEmpresasController"
+                ],
+                "description": "Bandeja de solicitudes recibidas. Solo campos mínimos del egresado (RNF-002b / Ley 1581).\n\u003cbr\u003e",
+                "operationId": "EmpresasController.GetBandeja",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "empresa_id",
+                        "description": "id de la empresa",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "empresa_id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no tiene acceso a esa empresa"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/empresas/{id}": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersEmpresasController"
+                ],
+                "description": "Perfil público de la empresa (razón social, descripción/web/dirección de Ágora on-demand, métricas de beneficios). Whitelist RNF-002b — sin NIT ni datos bancarios.\n\u003cbr\u003e",
+                "operationId": "EmpresasController.GetPerfil",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la empresa",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "404": {
+                        "description": "no encontrada"
+                    }
+                }
+            }
+        },
+        "/empresas/{id}/suspender": {
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersAdminController"
+                ],
+                "description": "Suspende una empresa (pasa de ACTIVA a SUSPENDIDA).\n\u003cbr\u003e",
+                "operationId": "AdminController.SuspenderEmpresa",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la empresa",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "422": {
+                        "description": "la empresa no se puede suspender en su estado actual"
+                    }
+                }
+            }
+        },
+        "/sectores-economicos": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersCatalogosController"
+                ],
+                "description": "Catálogo de sectores económicos (servicio institucional de parámetros, o local si ParametrosLocal=true).\n\u003cbr\u003e",
+                "operationId": "CatalogosController.GetSectores",
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/solicitudes": {
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Crea una solicitud. Valida: límite activo (RN-010), cupo atómico (RN-002b), solicitud única por (egresado, beneficio) (RN-007), genera radicado (RN-RADICADO). El egresado_id del body debe ser el del token (anti-IDOR).\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.Crear",
+                "parameters": [
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON con beneficio_id y demás datos de la solicitud",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "body inválido"
+                    },
+                    "403": {
+                        "description": "el egresado_id del body no coincide con el del token"
+                    },
+                    "422": {
+                        "description": "regla de negocio violada (límite activo, cupo, solicitud duplicada)"
+                    }
+                }
+            }
+        },
+        "/solicitudes/egresado/{egresado_id}": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Lista de solicitudes del egresado con estado e historial.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetByEgresado",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "egresado_id",
+                        "description": "id del egresado",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "egresado_id inválido"
+                    },
+                    "403": {
+                        "description": "el egresado_id no coincide con el del token"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/solicitudes/egresado/{egresado_id}/resumen": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Contadores por estado (activas, aprobadas, rechazadas, canceladas).\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.Resumen",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "egresado_id",
+                        "description": "id del egresado",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "egresado_id inválido"
+                    },
+                    "403": {
+                        "description": "el egresado_id no coincide con el del token"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/cancelar": {
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Cancelar solicitud. Solo si estado = PENDIENTE o REQUIERE_INFO (RN-005). Devuelve cupo (RN-002c).\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.Cancelar",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON opcional con justificación",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no es dueño de la solicitud"
+                    },
+                    "422": {
+                        "description": "la solicitud no está en un estado cancelable"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/comprobante": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Comprobante opcional que la empresa adjuntó al aprobar. { tiene_comprobante, nombre_archivo?, file? (base64) }.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetComprobante",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa de la solicitud"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/documentos": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Documentos requeridos del beneficio vs. subidos por el egresado (merge), para que tanto el egresado (qué le falta) como la empresa (qué revisar) vean lo mismo.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetDocumentos",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa de la solicitud"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "El egresado sube (o reemplaza) el PDF de un documento requerido.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.SubirDocumento",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON { documento_requerido_id, nombre_archivo, file (base64, PDF) }",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no es dueño de la solicitud"
+                    },
+                    "422": {
+                        "description": "archivo inválido u otra regla de negocio"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/documentos/{doc_id}": {
+            "delete": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "El egresado quita un documento que había subido.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.EliminarDocumento",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "path",
+                        "name": "doc_id",
+                        "description": "id del documento",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id o doc_id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no es dueño de la solicitud"
+                    },
+                    "422": {
+                        "description": "el documento no se puede eliminar en el estado actual"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/historial": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Bitácora de estados (C-4b) para el drawer de detalle, de ambas partes.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetHistorial",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa de la solicitud"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/mensajes": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Historial de mensajes de la solicitud.\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.GetMensajes",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa de la solicitud"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Enviar mensaje (solo cuando estado = REQUIERE_INFO).\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.EnviarMensaje",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON con el texto del mensaje",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no participa de la solicitud"
+                    },
+                    "422": {
+                        "description": "la solicitud no admite mensajes en su estado actual"
+                    }
+                }
+            }
+        },
+        "/solicitudes/{id}/responder": {
+            "put": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersSolicitudesController"
+                ],
+                "description": "Aprobar / Rechazar / Requiere información (empresa). Rechazar requiere justificacion \u003e= 20 chars (RN-003).\n\u003cbr\u003e",
+                "operationId": "SolicitudesController.Responder",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "description": "id de la solicitud",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "JSON con la decisión (aprobar/rechazar/requiere_info) y justificación",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "id o body inválido"
+                    },
+                    "403": {
+                        "description": "el usuario del token no es dueño de la empresa de la solicitud"
+                    },
+                    "422": {
+                        "description": "justificación insuficiente u otra regla de negocio (RN-003)"
+                    }
+                }
+            }
+        },
+        "/usuarios/{usuario_id}/empresas": {
+            "get": {
+                "tags": [
+                    "github.com/udistrital/egresados_service/controllersEmpresasController"
+                ],
+                "description": "Empresas a las que el usuario tiene acceso (selector multiempresa, caso 1:N).\n\u003cbr\u003e",
+                "operationId": "EmpresasController.GetEmpresasDeUsuario",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "usuario_id",
+                        "description": "id del usuario",
+                        "required": true,
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/helpers.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "usuario_id inválido"
+                    },
+                    "403": {
+                        "description": "el usuario_id no coincide con el del token"
+                    },
+                    "500": {
+                        "description": "error interno"
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "helpers.APIResponse": {
+            "title": "APIResponse",
+            "type": "object",
+            "properties": {
+                "Body": {
+                    "$ref": "#/definitions/helpers.interface"
+                },
+                "Message": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                },
+                "Success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "helpers.interface": {
+            "title": "interface",
+            "type": "object"
+        }
+    }
+}
