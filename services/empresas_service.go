@@ -11,8 +11,8 @@ import (
 
 // EmpresaProvisionada es cada empresa a la que el usuario queda vinculado tras el JIT.
 type EmpresaProvisionada struct {
-	EmpresaId        int    `json:"empresa_id"`
-	UsuarioEmpresaId int    `json:"usuario_empresa_id"`
+	EmpresaId        int `json:"empresa_id"`
+	UsuarioEmpresaId int `json:"usuario_empresa_id"`
 	// Nit va FUERA de ProveedorPublico (que es la whitelist RNF-002b para vistas
 	// públicas, p. ej. PerfilEmpresa) porque esta respuesta es la identidad propia
 	// de la empresa autenticada, no una vista de un tercero — aquí sí debe verse.
@@ -362,6 +362,9 @@ func GetBandejaEmpresa(token string, empresaId int) (interface{}, error) {
 	}
 
 	// RNF-002b: minimizar datos del egresado — solo exponer campos mínimos
+	// Caché por request (código institucional → carrera): evita repetir la cadena
+	// a academica_jbpm cuando varias solicitudes de la página son del mismo egresado.
+	carrerasPorCodigo := map[string]string{}
 	var bandeja []map[string]interface{}
 	for _, s := range solicitudes {
 		item := map[string]interface{}{
@@ -376,13 +379,29 @@ func GetBandejaEmpresa(token string, empresaId int) (interface{}, error) {
 			item["estado_solicitud_id"] = estadoId
 			item["estado_solicitud"] = codigo
 		}
-		// Del egresado solo exponer nombre y código institucional, nunca teléfono ni programa completo
+		// Del egresado solo exponer nombre, código institucional y carrera —
+		// nunca teléfono ni el perfil académico completo.
 		if egresado, ok := s["egresado"].(map[string]interface{}); ok {
 			if usuario, ok := egresado["usuario"].(map[string]interface{}); ok {
-				item["egresado"] = map[string]interface{}{
+				egresadoOut := map[string]interface{}{
 					"nombre":               usuario["nombre"],
 					"codigo_institucional": egresado["codigo_institucional"],
 				}
+				if codigo := asString(egresado["codigo_institucional"]); codigo != "" {
+					carrera, cacheada := carrerasPorCodigo[codigo]
+					if !cacheada {
+						resuelta, err := ResolverCarrera(token, codigo)
+						if err != nil {
+							resuelta = "" // best-effort: sin carrera, el cliente cae al código
+						}
+						carrerasPorCodigo[codigo] = resuelta
+						carrera = resuelta
+					}
+					if carrera != "" {
+						egresadoOut["programa_academico"] = carrera
+					}
+				}
+				item["egresado"] = egresadoOut
 			}
 		}
 		if beneficio, ok := s["beneficio"].(map[string]interface{}); ok {

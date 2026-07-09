@@ -21,3 +21,10 @@ vendor/
 .env
 .env.*
 !.env.example
+
+# Beego / OATI (gitignore.md)
+lastupdate.tmp
+.scannerwork/
+swagger/**
+!swagger/swagger.json
+!swagger/swagger.yml

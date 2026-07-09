@@ -133,9 +133,9 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 	}
 
 	payload := map[string]interface{}{
-		"solicitud_beneficio":     map[string]interface{}{"id": solicitudId},
-		"documento_requerido":     map[string]interface{}{"id": documentoRequeridoId},
-		"nombre_archivo":          nombreArchivo,
+		"solicitud_beneficio":      map[string]interface{}{"id": solicitudId},
+		"documento_requerido":      map[string]interface{}{"id": documentoRequeridoId},
+		"nombre_archivo":           nombreArchivo,
 		"enlace_gestor_documental": enlace,
 	}
 	var result interface{}

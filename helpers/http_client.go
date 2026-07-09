@@ -30,6 +30,9 @@ var (
 	// Gestor documental institucional (Nuxeo): subir/consultar/eliminar los PDFs de las
 	// solicitudes. El cliente Angular nunca llama a este servicio directamente, solo el MID.
 	gestorDocumentalURL = web.AppConfig.DefaultString("GestorDocumentalService", "")
+	// Datos académicos del SGA (jBPM): carrera del estudiante por código. El cliente
+	// Angular nunca llama a este servicio directamente, solo el MID.
+	academicaJbpmURL = web.AppConfig.DefaultString("AcademicaJbpmService", "")
 )
 
 // doRequest realiza una petición HTTP propagando el token del usuario (Bearer del
@@ -212,6 +215,19 @@ func GetParametros(token, path string, dest interface{}) error {
 	}
 	if status >= 400 {
 		return fmt.Errorf("servicio de parámetros respondió %d: %s", status, string(body))
+	}
+	return json.Unmarshal(body, dest)
+}
+
+// GetAcademicaJbpm realiza un GET al servicio académico del SGA (jBPM, p. ej.
+// datos_estudiante/{codigo} o carrera/{codigo}) y decodifica la respuesta en dest.
+func GetAcademicaJbpm(token, path string, dest interface{}) error {
+	body, status, err := doRequest(http.MethodGet, token, fmt.Sprintf("%s%s", academicaJbpmURL, path), nil)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("academica_jbpm respondió %d: %s", status, string(body))
 	}
 	return json.Unmarshal(body, dest)
 }
