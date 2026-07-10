@@ -99,7 +99,15 @@ docker ps
 
 ### Ejecución docker-compose
 ```shell
-# No implementado actualmente.
+# El stack local completo (Postgres + CRUD + MID) se levanta con el
+# docker-compose.yml del directorio PADRE (raíz del workspace Pasantias),
+# que construye este repo con Dockerfile.local (multi-stage: compila
+# dentro del contenedor, no requiere Go en el host).
+# Requiere el .env de este repo (gitignorado) con las URLs institucionales;
+# EGRESADOS_SERVICE_CRUD_URL la fija el compose (http://crud:8080/v1).
+
+cd ..
+docker compose up -d --build
 ```
 
 ## Estado CI
