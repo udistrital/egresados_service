@@ -11,16 +11,16 @@
 #
 # Prerrequisitos: Go, Java 11+, Maven, PostgreSQL 16 con la BD
 # `beneficios_egresados` ya creada con db/schema.sql. Asume que el repo del CRUD
-# es hermano de este (../sga_crud_beneficios_egresados).
+# es hermano de este (../egresados_crud).
 #
 # Uso:  .\run_pruebas.ps1            (desde tests/karate)
 #       .\run_pruebas.ps1 -NoReseed  (no tocar los datos)
 # =============================================================================
 param(
     [switch]$NoReseed,
-    [string]$PsqlPath   = 'C:\Program Files\PostgreSQL\16\bin\psql.exe',
+    [string]$PsqlPath   = 'C:\Program Files\PostgreSQL\18\bin\psql.exe',
     [string]$DbUser     = $(if ($env:EGRESADOS_CRUD_DB_USER) { $env:EGRESADOS_CRUD_DB_USER } else { 'postgres' }),
-    [string]$DbPassword = $(if ($env:EGRESADOS_CRUD_DB_PASS) { $env:EGRESADOS_CRUD_DB_PASS } else { '12345' }),
+    [string]$DbPassword = $(if ($env:EGRESADOS_CRUD_DB_PASS) { $env:EGRESADOS_CRUD_DB_PASS } else { '1234' }),
     # BD EXCLUSIVA de pruebas: la suite trunca/siembra datos, por eso NUNCA se
     # apunta a la BD de desarrollo (beneficios_egresados). Se crea sola si falta.
     [string]$DbName     = 'beneficios_egresados_pruebas'
@@ -29,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 
 $raizKarate = $PSScriptRoot
 $raizMid    = (Resolve-Path (Join-Path $raizKarate '..\..')).Path
-$raizCrud   = (Resolve-Path (Join-Path $raizMid '..\sga_crud_beneficios_egresados')).Path
+$raizCrud   = (Resolve-Path (Join-Path $raizMid '..\egresados_crud')).Path
 
 function Esperar-Puerto([int]$puerto, [string]$nombre) {
     foreach ($i in 1..60) {
