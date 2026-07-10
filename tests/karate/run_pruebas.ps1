@@ -9,16 +9,20 @@
 #   3. Ejecuta `mvn test` (reporte HTML en target/karate-reports/).
 #   4. Detiene los servicios al terminar.
 #
-# Prerrequisitos: Go, Java 11+, Maven, PostgreSQL 16 con la BD
-# `beneficios_egresados` ya creada con db/schema.sql. Asume que el repo del CRUD
-# es hermano de este (../sga_crud_beneficios_egresados).
+# Prerrequisitos: Go, Java 11+, Maven, PostgreSQL 16+ (psql se auto-detecta;
+# si no, -PsqlPath). Asume que el repo del CRUD es hermano de este, con nombre
+# sga_crud_beneficios_egresados o egresados_crud (si no, -CrudPath).
 #
 # Uso:  .\run_pruebas.ps1            (desde tests/karate)
 #       .\run_pruebas.ps1 -NoReseed  (no tocar los datos)
 # =============================================================================
 param(
     [switch]$NoReseed,
-    [string]$PsqlPath   = 'C:\Program Files\PostgreSQL\16\bin\psql.exe',
+    # Vacío = auto-detectar (PATH y luego C:\Program Files\PostgreSQL\<ver>\bin)
+    [string]$PsqlPath   = '',
+    # Vacío = buscar el repo del CRUD como hermano de este, por ambos nombres
+    # (sga_crud_beneficios_egresados o egresados_crud, el nombre institucional)
+    [string]$CrudPath   = '',
     [string]$DbUser     = $(if ($env:EGRESADOS_CRUD_DB_USER) { $env:EGRESADOS_CRUD_DB_USER } else { 'postgres' }),
     [string]$DbPassword = $(if ($env:EGRESADOS_CRUD_DB_PASS) { $env:EGRESADOS_CRUD_DB_PASS } else { '12345' }),
     # BD EXCLUSIVA de pruebas: la suite trunca/siembra datos, por eso NUNCA se
@@ -29,7 +33,34 @@ $ErrorActionPreference = 'Stop'
 
 $raizKarate = $PSScriptRoot
 $raizMid    = (Resolve-Path (Join-Path $raizKarate '..\..')).Path
-$raizCrud   = (Resolve-Path (Join-Path $raizMid '..\sga_crud_beneficios_egresados')).Path
+
+if ($CrudPath) {
+    $raizCrud = (Resolve-Path $CrudPath).Path
+} else {
+    $raizCrud = $null
+    foreach ($nombre in 'sga_crud_beneficios_egresados', 'egresados_crud') {
+        $cand = Join-Path (Split-Path $raizMid -Parent) $nombre
+        if (Test-Path (Join-Path $cand 'db\schema.sql')) { $raizCrud = (Resolve-Path $cand).Path; break }
+    }
+    if (-not $raizCrud) {
+        throw 'No se encontró el repo del CRUD junto a este (se buscó ..\sga_crud_beneficios_egresados y ..\egresados_crud). Clónalo como hermano del MID o indica su ruta con -CrudPath.'
+    }
+    Write-Host "Usando CRUD: $raizCrud"
+}
+
+if (-not $PsqlPath) {
+    $cmd = Get-Command psql -ErrorAction SilentlyContinue
+    if ($cmd) { $PsqlPath = $cmd.Source }
+    else {
+        $PsqlPath = Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' -ErrorAction SilentlyContinue |
+            Sort-Object { $v = 0; [int]::TryParse($_.Directory.Parent.Name, [ref]$v) | Out-Null; $v } -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+    if (-not $PsqlPath) {
+        throw 'No se encontró psql.exe (ni en el PATH ni en C:\Program Files\PostgreSQL\<ver>\bin). Instala PostgreSQL 16+ o indica la ruta con -PsqlPath.'
+    }
+    Write-Host "Usando psql: $PsqlPath"
+}
 
 function Esperar-Puerto([int]$puerto, [string]$nombre) {
     foreach ($i in 1..60) {
