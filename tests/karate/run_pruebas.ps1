@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # run_pruebas.ps1 — Orquesta la suite Karate del MID de Beneficios Egresados
 # =============================================================================
 # Qué hace:
@@ -19,8 +19,8 @@
 param(
     [switch]$NoReseed,
     [string]$PsqlPath   = 'C:\Program Files\PostgreSQL\16\bin\psql.exe',
-    [string]$DbUser     = $(if ($env:BENEFICIOS_EGRESADOS_CRUD_DB_USER) { $env:BENEFICIOS_EGRESADOS_CRUD_DB_USER } else { 'postgres' }),
-    [string]$DbPassword = $(if ($env:BENEFICIOS_EGRESADOS_CRUD_DB_PASSWORD) { $env:BENEFICIOS_EGRESADOS_CRUD_DB_PASSWORD } else { '12345' }),
+    [string]$DbUser     = $(if ($env:EGRESADOS_CRUD_DB_USER) { $env:EGRESADOS_CRUD_DB_USER } else { 'postgres' }),
+    [string]$DbPassword = $(if ($env:EGRESADOS_CRUD_DB_PASS) { $env:EGRESADOS_CRUD_DB_PASS } else { '12345' }),
     # BD EXCLUSIVA de pruebas: la suite trunca/siembra datos, por eso NUNCA se
     # apunta a la BD de desarrollo (beneficios_egresados). Se crea sola si falta.
     [string]$DbName     = 'beneficios_egresados_pruebas'
@@ -82,24 +82,36 @@ Pop-Location
 $procs = @()
 try {
     Write-Host "Levantando CRUD (:8080) contra la BD $DbName..."
-    $env:BENEFICIOS_EGRESADOS_CRUD_DB_USER = $DbUser
-    $env:BENEFICIOS_EGRESADOS_CRUD_DB_PASSWORD = $DbPassword
-    $env:BENEFICIOS_EGRESADOS_CRUD_DB_NAME = $DbName
+    # Nombres de env estandarizados por la universidad (conf/app.conf, 2026-07-09):
+    # EGRESADOS_CRUD_* — sin default quemado, hay que setear TODAS.
+    $env:EGRESADOS_CRUD_HTTPPORT  = '8080'
+    $env:EGRESADOS_CRUD_RUNMODE   = 'dev'
+    $env:EGRESADOS_CRUD_DB_USER   = $DbUser
+    $env:EGRESADOS_CRUD_DB_PASS   = $DbPassword
+    $env:EGRESADOS_CRUD_DB_URL    = '127.0.0.1'
+    $env:EGRESADOS_CRUD_DB_PORT   = '5432'
+    $env:EGRESADOS_CRUD_DB_NAME   = $DbName
+    $env:EGRESADOS_CRUD_DB_SCHEMA = 'beneficios_egresados'
     $procs += Start-Process (Join-Path $binDir 'crud_pruebas.exe') -WorkingDirectory $raizCrud -PassThru -WindowStyle Hidden
     Esperar-Puerto 8080 'CRUD'
 
     Write-Host 'Levantando MID (:8081) apuntando al mock institucional (:8090)...'
+    $env:EGRESADOS_SERVICE_HTTP_PORT = '8081'
+    $env:EGRESADOS_SERVICE_RUNMODE   = 'dev'
     # Catálogos con la semilla local (mismos ids institucionales 7199+)
-    $env:BENEFICIOS_EGRESADOS_MID_PARAMETROS_LOCAL = 'true'
+    $env:EGRESADOS_SERVICE_PARAMETROS_LOCAL = 'true'
     # Todos los servicios institucionales van al mock de la suite. El middleware
     # de token queda ACTIVO: los tokens ficticios son opacos y se validan contra
     # el userinfo del mock (misma rama de código que producción).
-    $env:BENEFICIOS_EGRESADOS_MID_USERINFO_URL          = 'http://localhost:8090/oauth2/userinfo'
-    $env:BENEFICIOS_EGRESADOS_MID_AUTENTICACION_URL     = 'http://localhost:8090/autenticacion_mid/v1'
-    $env:BENEFICIOS_EGRESADOS_MID_AMAZON_URL            = 'http://localhost:8090/administrativa_amazon_api/v1'
-    $env:BENEFICIOS_EGRESADOS_MID_TERCEROS_URL          = 'http://localhost:8090/terceros_crud/v1'
-    $env:BENEFICIOS_EGRESADOS_MID_SGA_MID_URL           = 'http://localhost:8090/sga_mid/v1'
-    $env:BENEFICIOS_EGRESADOS_MID_GESTOR_DOCUMENTAL_URL = 'http://localhost:8090/gestor_documental_mid/v1'
+    $env:EGRESADOS_SERVICE_CRUD_URL              = 'http://localhost:8080/v1'
+    $env:EGRESADOS_SERVICE_USERINFO_URL          = 'http://localhost:8090/oauth2/userinfo'
+    $env:EGRESADOS_SERVICE_AUTENTICACION_URL     = 'http://localhost:8090/autenticacion_mid/v1'
+    $env:EGRESADOS_SERVICE_AMAZON_URL            = 'http://localhost:8090/administrativa_amazon_api/v1'
+    $env:EGRESADOS_SERVICE_TERCEROS_URL          = 'http://localhost:8090/terceros_crud/v1'
+    $env:EGRESADOS_SERVICE_SGA_MID_URL           = 'http://localhost:8090/sga_mid/v1'
+    $env:EGRESADOS_SERVICE_GESTOR_DOCUMENTAL_URL = 'http://localhost:8090/gestor_documental_mid/v1'
+    # academica_jbpm (carrera, nuevo del merge 2026-07-09): best-effort, degrada sin mock
+    $env:EGRESADOS_SERVICE_ACADEMICA_JBPM_URL    = 'http://localhost:8090/academica_jbpm/v1'
     $procs += Start-Process (Join-Path $binDir 'mid_pruebas.exe') -WorkingDirectory $raizMid -PassThru -WindowStyle Hidden
     Esperar-Puerto 8081 'MID'
 
