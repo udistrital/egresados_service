@@ -1,3 +1,9 @@
+// @APIVersion 1.0.0
+// @Title egresados_service — API MID Beneficios Egresados
+// @Description Lógica de negocio del módulo Beneficios para Egresados. Todo /v1/* exige
+// @Description un JWT Bearer de WSO2 (middleware/jwt.go), salvo EGRESADOS_SERVICE_VALIDAR_JWT=false (solo dev).
+// @SecurityDefinition Bearer apiKey Authorization header "Pegar el token con el prefijo 'Bearer '. Ej: Bearer eyJhbGciOi..."
+// @Security Bearer
 package routers
 
 import (

@@ -86,7 +86,7 @@ func CrearSolicitud(token string, body map[string]interface{}) (interface{}, err
 	}
 
 	var result map[string]interface{}
-	if err := helpers.PostCRUD(token, "/solicitud_beneficio", solicitud, &result); err != nil {
+	if err := helpers.PostCRUD(token, "/solicitud-beneficio", solicitud, &result); err != nil {
 		devolverCupo(token, bid)
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func CrearSolicitud(token string, body map[string]interface{}) (interface{}, err
 		"estado_nuevo_id":     pendienteId,
 		"usuario":             map[string]interface{}{"id": usuarioId},
 	}
-	if err := helpers.PostCRUD(token, "/historial_solicitud", historial, &map[string]interface{}{}); err != nil {
+	if err := helpers.PostCRUD(token, "/historial-solicitud", historial, &map[string]interface{}{}); err != nil {
 		devolverCupo(token, bid)
 		// Sin historial la solicitud queda sin estado: es un error real, no advertencia
 		return nil, fmt.Errorf("solicitud %d creada pero no se pudo registrar su estado inicial: %v", solicitudId, err)
@@ -115,7 +115,7 @@ func CrearSolicitud(token string, body map[string]interface{}) (interface{}, err
 
 	// C-5 + hueco#2: leer el radicado que generó la BD para devolverlo en la respuesta.
 	var creada map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &creada); err == nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud-beneficio/%d", solicitudId), &creada); err == nil {
 		if rad := asString(firstOf(creada, "radicado", "Radicado")); rad != "" {
 			result["radicado"] = rad
 		}
@@ -128,7 +128,7 @@ func CrearSolicitud(token string, body map[string]interface{}) (interface{}, err
 // vigente derivado del historial (C-4b).
 func GetSolicitudesByEgresado(token string, egresadoId int) (interface{}, error) {
 	var solicitudes []map[string]interface{}
-	query := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	query := fmt.Sprintf("/solicitud-beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
 	if err := helpers.GetCRUD(token, query, &solicitudes); err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func GetResumenEgresado(token string, egresadoId int) (interface{}, error) {
 		"canceladas": 0,
 	}
 	var solicitudes []map[string]interface{}
-	q := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	q := fmt.Sprintf("/solicitud-beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func ResponderSolicitud(token string, id int, body map[string]interface{}) error
 			"mensaje":             justificacion,
 		}
 		var mensajeCreado interface{}
-		if err := helpers.PostCRUD(token, "/mensaje_solicitud", payload, &mensajeCreado); err != nil {
+		if err := helpers.PostCRUD(token, "/mensaje-solicitud", payload, &mensajeCreado); err != nil {
 			return fmt.Errorf("la solicitud pasó a %s pero el mensaje de cierre no se pudo publicar: %v", nuevoEstado, err)
 		}
 	}
@@ -380,7 +380,7 @@ func EnviarMensaje(token string, solicitudId int, body map[string]interface{}) (
 		"mensaje":             body["mensaje"],
 	}
 	var result interface{}
-	if err := helpers.PostCRUD(token, "/mensaje_solicitud", payload, &result); err != nil {
+	if err := helpers.PostCRUD(token, "/mensaje-solicitud", payload, &result); err != nil {
 		return nil, err
 	}
 
@@ -400,7 +400,7 @@ func esDelEgresado(token string, solicitudId, usuarioId int) bool {
 		return false
 	}
 	var sol map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &sol); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud-beneficio/%d", solicitudId), &sol); err != nil {
 		return false
 	}
 	eg, _ := sol["egresado"].(map[string]interface{})
@@ -426,7 +426,7 @@ func esDelEgresado(token string, solicitudId, usuarioId int) bool {
 // endpoint GET /solicitudes/:id/comprobante).
 func GetHistorialSolicitud(token string, solicitudId int) ([]map[string]interface{}, error) {
 	var filas []map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d", solicitudId), &filas); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/historial-solicitud/solicitud/%d", solicitudId), &filas); err != nil {
 		return nil, err
 	}
 	historial := make([]map[string]interface{}, 0, len(filas))
@@ -459,7 +459,7 @@ func GetHistorialSolicitud(token string, solicitudId int) ([]map[string]interfac
 // GetMensajes retorna el historial de mensajes de una solicitud.
 func GetMensajes(token string, solicitudId int) (interface{}, error) {
 	var result interface{}
-	query := fmt.Sprintf("/mensaje_solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&sortby=FechaEnvio&order=asc&limit=0", solicitudId)
+	query := fmt.Sprintf("/mensaje-solicitud?query=SolicitudBeneficio.Id:%d,Activo:true&sortby=FechaEnvio&order=asc&limit=0", solicitudId)
 	if err := helpers.GetCRUD(token, query, &result); err != nil {
 		return nil, err
 	}
@@ -498,7 +498,7 @@ func transicionValida(actual, nuevo string) bool {
 // del historial (C-4b) y lo traduce a codigo_abreviacion vía el servicio de parámetros.
 func getEstadoActual(token string, solicitudId int) (codigo string, estadoId int, err error) {
 	var vigente map[string]interface{}
-	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
+	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial-solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
 		return "", 0, fmt.Errorf("no se pudo obtener el estado de la solicitud %d: %v", solicitudId, err)
 	}
 	estadoId = toInt(vigente["estado_nuevo_id"])
@@ -533,7 +533,7 @@ func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuev
 		historial["nombre_archivo_comprobante"] = nombreComprobante
 		historial["enlace_comprobante"] = enlaceComprobante
 	}
-	return helpers.PostCRUD(token, "/historial_solicitud", historial, &map[string]interface{}{})
+	return helpers.PostCRUD(token, "/historial-solicitud", historial, &map[string]interface{}{})
 }
 
 // getComprobanteDeSolicitud lee el comprobante (opcional) que la empresa adjuntó al
@@ -541,7 +541,7 @@ func registrarCambioEstado(token string, solicitudId, estadoAnteriorId int, nuev
 // hay comprobante (no es error: es opcional).
 func getComprobanteDeSolicitud(token string, solicitudId int) (nombreArchivo, enlace string, err error) {
 	var vigente map[string]interface{}
-	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial_solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
+	if err = helpers.GetCRUD(token, fmt.Sprintf("/historial-solicitud/solicitud/%d/vigente", solicitudId), &vigente); err != nil {
 		return "", "", fmt.Errorf("no se pudo obtener el estado de la solicitud %d: %v", solicitudId, err)
 	}
 	nombreArchivo = asString(firstOf(vigente, "nombre_archivo_comprobante", "NombreArchivoComprobante"))
@@ -566,7 +566,7 @@ func esEstadoNoTerminal(codigo string) bool {
 // pero si crece conviene resolver los ids contra un único fetch de ESTADO_SOLICITUD.
 func beneficiosConSolicitudActiva(token string, egresadoId int) ([]int, error) {
 	var solicitudes []map[string]interface{}
-	q := fmt.Sprintf("/solicitud_beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
+	q := fmt.Sprintf("/solicitud-beneficio?query=Egresado.Id:%d,Activo:true&limit=0", egresadoId)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
 		return nil, err
 	}
@@ -609,7 +609,7 @@ func devolverCupo(token string, beneficioId int) {
 // getBeneficioIdDeSolicitud obtiene el id del beneficio de una solicitud (para RN-002c).
 func getBeneficioIdDeSolicitud(token string, solicitudId int) (int, error) {
 	var s map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &s); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud-beneficio/%d", solicitudId), &s); err != nil {
 		return 0, err
 	}
 	if ben, ok := s["beneficio"].(map[string]interface{}); ok {

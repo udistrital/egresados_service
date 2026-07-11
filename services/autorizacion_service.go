@@ -50,7 +50,7 @@ func getUsuariosLocalesDeToken(token string) ([]int, error) {
 func vinculadoAEmpresa(token string, usuarioIds []int, empresaId int) (bool, error) {
 	for _, uid := range usuarioIds {
 		var vinculos []map[string]interface{}
-		q := fmt.Sprintf("/usuario_empresa?query=Usuario.Id:%d,Empresa.Id:%d,Activo:true&fields=Id&limit=1", uid, empresaId)
+		q := fmt.Sprintf("/usuario-empresa?query=Usuario.Id:%d,Empresa.Id:%d,Activo:true&fields=Id&limit=1", uid, empresaId)
 		if err := helpers.GetCRUD(token, q, &vinculos); err != nil {
 			return false, err
 		}
@@ -97,7 +97,7 @@ func empresaDeBeneficio(token string, beneficioId int) (int, error) {
 // datosDeSolicitud resuelve (egresadoId, beneficioId) de una solicitud.
 func datosDeSolicitud(token string, solicitudId int) (int, int, error) {
 	var s map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud_beneficio/%d", solicitudId), &s); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/solicitud-beneficio/%d", solicitudId), &s); err != nil {
 		return 0, 0, fmt.Errorf("solicitud %d no encontrada", solicitudId)
 	}
 	eg, _ := s["egresado"].(map[string]interface{})
@@ -108,7 +108,7 @@ func datosDeSolicitud(token string, solicitudId int) (int, int, error) {
 // solicitudDeDocumento resuelve la solicitud a la que pertenece un documento_solicitud.
 func solicitudDeDocumento(token string, documentoSolicitudId int) (int, error) {
 	var doc map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), &doc); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId), &doc); err != nil {
 		return 0, fmt.Errorf("documento %d no encontrado", documentoSolicitudId)
 	}
 	sol, _ := doc["solicitud_beneficio"].(map[string]interface{})
