@@ -31,6 +31,18 @@ $raizKarate = $PSScriptRoot
 $raizMid    = (Resolve-Path (Join-Path $raizKarate '..\..')).Path
 $raizCrud   = (Resolve-Path (Join-Path $raizMid '..\egresados_crud')).Path
 
+function Invoke-Psql {
+    # psql escribe NOTICE (p. ej. "truncando además la tabla..." de un TRUNCATE
+    # CASCADE) al stream de error de PowerShell; con $ErrorActionPreference='Stop'
+    # eso aborta el script aunque psql termine con exit 0. Se baja la preferencia
+    # solo para estas llamadas y se confía en $LASTEXITCODE (la señal real de
+    # éxito/fracaso de un proceso nativo), que cada call site ya revisa después.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $PsqlPath @args }
+    finally { $ErrorActionPreference = $prevEAP }
+}
+
 function Esperar-Puerto([int]$puerto, [string]$nombre) {
     foreach ($i in 1..60) {
         if ((Test-NetConnection 127.0.0.1 -Port $puerto -WarningAction SilentlyContinue).TcpTestSucceeded) { return }
@@ -50,18 +62,18 @@ if (-not (Test-NetConnection 127.0.0.1 -Port 5432 -WarningAction SilentlyContinu
 Esperar-Puerto 5432 'PostgreSQL'
 
 $env:PGPASSWORD = $DbPassword
-$existe = & $PsqlPath -U $DbUser -h 127.0.0.1 -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DbName'"
+$existe = Invoke-Psql -U $DbUser -h 127.0.0.1 -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DbName'"
 if ($existe -ne '1') {
     Write-Host "Creando la BD de pruebas $DbName (schema.sql del CRUD)..."
-    & $PsqlPath -U $DbUser -h 127.0.0.1 -d postgres -c "CREATE DATABASE $DbName" | Out-Null
+    Invoke-Psql -U $DbUser -h 127.0.0.1 -d postgres -c "CREATE DATABASE $DbName" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la BD de pruebas' }
-    & $PsqlPath -U $DbUser -h 127.0.0.1 -d $DbName -v ON_ERROR_STOP=1 -f (Join-Path $raizCrud 'db\schema.sql') | Out-Null
+    Invoke-Psql -U $DbUser -h 127.0.0.1 -d $DbName -v ON_ERROR_STOP=1 -f (Join-Path $raizCrud 'db\schema.sql') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Falló la aplicación de db/schema.sql sobre la BD de pruebas' }
 }
 
 if (-not $NoReseed) {
     Write-Host "Re-sembrando $DbName con db/seed_pruebas.sql..."
-    & $PsqlPath -U $DbUser -h 127.0.0.1 -d $DbName -v ON_ERROR_STOP=1 -f (Join-Path $raizCrud 'db\seed_pruebas.sql') | Out-Null
+    Invoke-Psql -U $DbUser -h 127.0.0.1 -d $DbName -v ON_ERROR_STOP=1 -f (Join-Path $raizCrud 'db\seed_pruebas.sql') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Falló la siembra de la BD de pruebas (¿credenciales?)' }
 }
 
