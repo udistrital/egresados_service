@@ -54,7 +54,7 @@ func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 	}
 	// Best-effort: si el conteo falla, el detalle sale sin él.
 	var solicitudes []map[string]interface{}
-	q := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", id)
+	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", id)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err == nil {
 		result["total_solicitudes"] = len(solicitudes)
 	}
@@ -71,7 +71,7 @@ func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 // GetDocumentosDeSolicitud (egresado/empresa, después de postularse).
 func GetDocumentosRequeridos(token string, beneficioId int) ([]map[string]interface{}, error) {
 	var documentos []map[string]interface{}
-	q := fmt.Sprintf("/documento_requerido_beneficio?query=Beneficio.Id:%d,Activo:true&limit=0", beneficioId)
+	q := fmt.Sprintf("/documento-requerido-beneficio?query=Beneficio.Id:%d,Activo:true&limit=0", beneficioId)
 	if err := helpers.GetCRUD(token, q, &documentos); err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func GetBeneficiosDeEmpresa(token string, empresaId int) (interface{}, error) {
 			b["estado_beneficio"] = codigo
 		}
 		var sols []map[string]interface{}
-		qs := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", toInt(b["id"]))
+		qs := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", toInt(b["id"]))
 		if err := helpers.GetCRUD(token, qs, &sols); err != nil {
 			continue // best effort: la card sale sin métricas
 		}
@@ -192,7 +192,7 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 				"descripcion": descripcion,
 			}
 			var docResult interface{}
-			if err := helpers.PostCRUD(token, "/documento_requerido_beneficio", payload, &docResult); err != nil {
+			if err := helpers.PostCRUD(token, "/documento-requerido-beneficio", payload, &docResult); err != nil {
 				// El beneficio YA se creó; un documento requerido que falla no debe
 				// revertirlo (no hay cupo ni radicado en juego aquí). Se reporta el
 				// error para que la empresa sepa que ese documento no quedó registrado.
@@ -299,7 +299,7 @@ func getBeneficioBase(token string, id int) (map[string]interface{}, error) {
 // mismo caveat que RN-007/010.
 func beneficioTieneSolicitudesActivas(token string, beneficioId int) (bool, error) {
 	var solicitudes []map[string]interface{}
-	q := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", beneficioId)
+	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", beneficioId)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err != nil {
 		return false, err
 	}

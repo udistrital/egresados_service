@@ -5,14 +5,11 @@ import (
 	"github.com/beego/beego/v2/server/web/filter/cors"
 	"github.com/udistrital/egresados_service/middleware"
 	_ "github.com/udistrital/egresados_service/routers"
-	// Pendiente (ver nota "Integraciones institucionales" en init(), más abajo):
-	// estos 5 imports rompen el build hoy por el choque Beego v1/v2. Descomentar
-	// junto con el bloque de abajo cuando utils_oas soporte Beego v2.
-	// apistatus "github.com/udistrital/utils_oas/apiStatusLib"
-	// "github.com/udistrital/utils_oas/auditoria"
-	// "github.com/udistrital/utils_oas/customerrorv2"
-	// "github.com/udistrital/utils_oas/security"
-	// "github.com/udistrital/utils_oas/xray"
+	apistatus "github.com/udistrital/utils_oas/v2/apiStatusLib"
+	"github.com/udistrital/utils_oas/v2/auditoria"
+	customerrorv2 "github.com/udistrital/utils_oas/v2/customerror"
+	"github.com/udistrital/utils_oas/v2/security"
+	"github.com/udistrital/utils_oas/v2/xray"
 )
 
 func init() {
@@ -40,35 +37,28 @@ func init() {
 	// Validación del JWT ENTRANTE (después de CORS para no interferir el preflight):
 	// firma RS256 contra el JWKS de WSO2 o userinfo para tokens opacos. Sin token
 	// válido → 401 antes de tocar cualquier controller. Ver middleware/jwt.go.
+	// (auditoria.InitMiddleware(), más abajo, valida el token por su cuenta para el log
+	// de auditoría, pero nunca corta el request — la única que aplica control de acceso
+	// real es esta.)
 	web.InsertFilter("/v1/*", web.BeforeRouter, middleware.ValidarJWTEntrante)
 
 	// EnableDocs (conf/app.conf) solo activa la bandera; Beego v2 no sirve
 	// swagger/ automáticamente, hay que exponerla como estática (bee generate docs).
-	if web.BConfig.WebConfig.EnableDocs {
+	// Se lee directo del config genérico (no de BConfig.WebConfig.EnableDocs, que
+	// Beego v2 marcó deprecated: "Beego didn't use it anymore" — sigue funcionando
+	// hoy, pero podrían quitarlo en una versión futura).
+	if web.AppConfig.DefaultBool("EnableDocs", false) {
 		web.SetStaticPath("/swagger", "swagger")
 	}
 
-	// ── Integraciones institucionales pendientes (configuracion_ci_cd.md) ──────────
-	// Decisión con el Ingeniero (2026-07-09): este repo se queda en Beego v2 por ahora.
-	// utils_oas se actualizará a v2 más adelante (de su lado o del nuestro); hasta que
-	// eso pase, NO descomentar lo siguiente: apiStatusLib/auditoria/security/xray/
-	// customerrorv2 importan github.com/astaxie/beego (v1), que registra la misma flag
-	// "graceful" que beego/v2/server/web/grace — el binario hace panic al arrancar si
-	// conviven los dos (confirmado: "panic: flag redefined: graceful").
-	//
-	// Cuando utils_oas soporte Beego v2 (o se decida migrar este repo a v1): descomentar
-	// esto + los 5 imports de arriba, correr
-	//   go get github.com/udistrital/utils_oas@latest && go mod tidy
-	// y validar que compile y arranque (incluye el CORS, el ruteo y el swagger, que hoy
-	// ya están probados y funcionando sin estas piezas) antes de desplegar.
-	//
-	// apistatus.Init()
-	// auditoria.InitMiddleware()
-	// security.SetSecurityHeaders()
-	// xray.Init()
-	// TODO: revisar si customerrorv2.CustomErrorController tiene equivalente para
-	// web.ErrorController (v2) o si customerrorv2 en sí ya es agnóstico de versión.
-	// web.ErrorController(&customerrorv2.CustomErrorController{})
+	// Integraciones institucionales (configuracion_ci_cd.md). Habilitadas ahora que
+	// utils_oas/v2 (v2.0.0-beta.1, 2026-07) migró a Beego v2 — ya no choca con nuestro
+	// stack (antes: panic: flag redefined: graceful, por astaxie/beego transitivo).
+	apistatus.Init()              // GET / — healthcheck institucional ({"status":"ok"})
+	auditoria.InitMiddleware()    // log de auditoría por request (aquí no hay ORM/SQL que loguear)
+	security.SetSecurityHeaders() // headers CSP/HSTS/X-Frame-Options/etc.
+	xray.Init()                   // tracing AWS X-Ray (no-op si PARAMETER_STORE no está seteado)
+	web.ErrorController(&customerrorv2.CustomErrorController{})
 }
 
 func main() {

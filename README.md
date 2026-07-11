@@ -26,7 +26,7 @@ Capas hermanas:
   `ESTADO_SOLICITUD`, `CATEGORIA_BENEFICIO`, `SECTOR_ECONOMICO`, `PARAMETRO_SISTEMA`
   (creados en el servicio institucional el 2026-07-07, área EGR).
 - **Estado de solicitudes (C-4b):** el estado vigente se deriva del historial
-  (`GET /historial_solicitud/solicitud/:id/vigente` del CRUD); la máquina de estados
+  (`GET /historial-solicitud/solicitud/:id/vigente` del CRUD); la máquina de estados
   (RN-005) valida transiciones y cada cambio es un INSERT en el historial.
 - **Radicados:** los genera la base de datos al insertar la solicitud
   (`fn_siguiente_radicado()`, C-5); el MID no envía radicado y lo devuelve leído
@@ -54,7 +54,7 @@ de Beego); las claves `*Service` quedan disponibles en `web.AppConfig`.
 | `EGRESADOS_SERVICE_VALIDAR_JWT` | `ValidarJWT` | `true` | **Solo dev**: `false` desactiva la validación del JWT entrante (sin conectividad al JWKS/userinfo) |
 | `EGRESADOS_SERVICE_PARAMETROS_LOCAL` | `ParametrosLocal` | `false` | **Solo dev/offline**: si `true`, resuelve los parámetros desde un catálogo EN MEMORIA (`parametros_service.go`), sin token ni servicio institucional. El seed local usa los MISMOS ids institucionales (7199+), así que modo local y real son intercambiables. |
 | `EGRESADOS_SERVICE_HTTP_PORT` | `httpport` | `8081` | Puerto HTTP (distinto del `8080` del CRUD para poder correr ambos en local) |
-| `EGRESADOS_SERVICE_RUNMODE` | `runmode` | `prod` | Modo de ejecución de Beego (`prod`\|`dev`) |
+| `EGRESADOS_SERVICE_RUN_MODE` | `runmode` | `prod` | Modo de ejecución de Beego (`prod`\|`dev`) |
 | `PARAMETER_STORE` | `parameterStore` | _(vacío)_ | Endpoint del AWS SSM Parameter Store institucional |
 
 ### Ejecución del Proyecto
@@ -70,7 +70,7 @@ git pull origin develop && git checkout develop
 
 # 4. Requiere el CRUD corriendo (ver README de egresados_crud) y configurar
 #    las variables de entorno que se necesiten (ver tabla arriba)
-export EGRESADOS_SERVICE_RUNMODE=dev
+export EGRESADOS_SERVICE_RUN_MODE=dev
 export EGRESADOS_SERVICE_PARAMETROS_LOCAL=true   # si el catálogo institucional aún no existe
 
 # 5. Ejecutar el proyecto
@@ -87,7 +87,7 @@ docker build -t egresados_service .
 
 # 2. Ejecutar el contenedor
 docker run --name egresados_service \
-  -e EGRESADOS_SERVICE_RUNMODE=dev \
+  -e EGRESADOS_SERVICE_RUN_MODE=dev \
   -e EGRESADOS_SERVICE_CRUD_URL=http://host.docker.internal:8080/v1 \
   -e EGRESADOS_SERVICE_PARAMETROS_LOCAL=true \
   -p 8081:8081 \

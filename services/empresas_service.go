@@ -29,7 +29,7 @@ type ProvisionResult struct {
 // ProvisionarEmpresa hace el JIT provisioning de un usuario de empresa al primer login.
 // Flujo (C-2b/c): userinfo(token) → userRol(email) → validar que es empresa →
 // informacion_proveedor por correo → amarre de identidad → alta idempotente de
-// usuario/empresa/usuario_empresa.
+// usuario/empresa/usuario-empresa.
 //
 // SEGURIDAD: el email se deriva del token vía OIDC userinfo (GetUserInfoDeToken), NO
 // del body — así un usuario autenticado no puede provisionar la empresa de otro correo.
@@ -215,7 +215,7 @@ func actualizarEmpresaDeAgora(token string, existente map[string]interface{}, p 
 // findOrCreateUsuarioEmpresa vincula usuario↔empresa (idempotente). Devuelve el id local.
 func findOrCreateUsuarioEmpresa(token string, usuarioId, empresaId int, principal bool) (int, error) {
 	var existentes []map[string]interface{}
-	q := fmt.Sprintf("/usuario_empresa?query=Usuario.Id:%d,Empresa.Id:%d,Activo:true&limit=1", usuarioId, empresaId)
+	q := fmt.Sprintf("/usuario-empresa?query=Usuario.Id:%d,Empresa.Id:%d,Activo:true&limit=1", usuarioId, empresaId)
 	if err := helpers.GetCRUD(token, q, &existentes); err != nil {
 		return 0, err
 	}
@@ -229,7 +229,7 @@ func findOrCreateUsuarioEmpresa(token string, usuarioId, empresaId int, principa
 		"es_principal": principal,
 	}
 	var creado map[string]interface{}
-	if err := helpers.PostCRUD(token, "/usuario_empresa", nuevo, &creado); err != nil {
+	if err := helpers.PostCRUD(token, "/usuario-empresa", nuevo, &creado); err != nil {
 		return 0, err
 	}
 	return toInt(firstOf(creado, "id", "Id")), nil
@@ -251,7 +251,7 @@ type EmpresaDeUsuario struct {
 // multiempresa). Lee usuario_empresa (con la empresa anidada vía RelatedSel) y proyecta.
 func GetEmpresasDeUsuario(token string, usuarioId int) ([]EmpresaDeUsuario, error) {
 	var vinculos []map[string]interface{}
-	q := fmt.Sprintf("/usuario_empresa?query=Usuario.Id:%d,Activo:true&limit=0", usuarioId)
+	q := fmt.Sprintf("/usuario-empresa?query=Usuario.Id:%d,Activo:true&limit=0", usuarioId)
 	if err := helpers.GetCRUD(token, q, &vinculos); err != nil {
 		return nil, err
 	}
@@ -341,7 +341,7 @@ func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 	// N+1 de getEstadoActual (C-4b), mismo caveat que RN-007/010; optimizable con la
 	// vista v_solicitud_estado_vigente si el volumen crece.
 	var solicitudes []map[string]interface{}
-	q := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&fields=Id&limit=0", empresaId)
+	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&fields=Id&limit=0", empresaId)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err == nil {
 		for _, s := range solicitudes {
 			if codigo, _, err := getEstadoActual(token, toInt(firstOf(s, "id", "Id"))); err == nil && codigo == estadoAprobada {
@@ -356,7 +356,7 @@ func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 // Solo expone campos mínimos del egresado (RNF-002b / Ley 1581).
 func GetBandejaEmpresa(token string, empresaId int) (interface{}, error) {
 	var solicitudes []map[string]interface{}
-	query := fmt.Sprintf("/solicitud_beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&limit=0", empresaId)
+	query := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&limit=0", empresaId)
 	if err := helpers.GetCRUD(token, query, &solicitudes); err != nil {
 		return nil, err
 	}

@@ -63,7 +63,7 @@ func GetDocumentosDeSolicitud(token string, solicitudId int) ([]map[string]inter
 // getDocumentosSubidos lista los documento_solicitud (activos) de una solicitud.
 func getDocumentosSubidos(token string, solicitudId int) ([]map[string]interface{}, error) {
 	var subidos []map[string]interface{}
-	q := fmt.Sprintf("/documento_solicitud/solicitud/%d", solicitudId)
+	q := fmt.Sprintf("/documento-solicitud/solicitud/%d", solicitudId)
 	if err := helpers.GetCRUD(token, q, &subidos); err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 			"nombre_archivo":           nombreArchivo,
 			"enlace_gestor_documental": enlace,
 		}
-		if err := helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", docId), payload); err != nil {
+		if err := helpers.PutCRUD(token, fmt.Sprintf("/documento-solicitud/%d", docId), payload); err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{"id": docId}, nil
@@ -139,7 +139,7 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 		"enlace_gestor_documental": enlace,
 	}
 	var result interface{}
-	if err := helpers.PostCRUD(token, "/documento_solicitud", payload, &result); err != nil {
+	if err := helpers.PostCRUD(token, "/documento-solicitud", payload, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -152,14 +152,14 @@ func EliminarDocumentoSolicitud(token string, solicitudId, documentoSolicitudId 
 		return err
 	}
 	var doc map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), &doc); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId), &doc); err != nil {
 		return fmt.Errorf("documento no encontrado: %v", err)
 	}
 	enlace := asString(firstOf(doc, "enlace_gestor_documental", "EnlaceGestorDocumental"))
 	if err := EliminarDocumentoGestor(token, enlace); err != nil {
 		return err
 	}
-	return helpers.DeleteCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId))
+	return helpers.DeleteCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId))
 }
 
 // ComentarDocumento registra (o reemplaza) la observación de la empresa sobre un
@@ -172,14 +172,14 @@ func ComentarDocumento(token string, documentoSolicitudId int, comentario string
 		"comentario_empresa": comentario,
 		"fecha_comentario":   time.Now().Format(time.RFC3339),
 	}
-	return helpers.PutCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), payload)
+	return helpers.PutCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId), payload)
 }
 
 // GetArchivoDocumento devuelve el nombre y el contenido en base64 de un documento
 // subido, para que el cliente lo abra/descargue sin llamar directo al gestor documental.
 func GetArchivoDocumento(token string, documentoSolicitudId int) (map[string]interface{}, error) {
 	var doc map[string]interface{}
-	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento_solicitud/%d", documentoSolicitudId), &doc); err != nil {
+	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId), &doc); err != nil {
 		return nil, fmt.Errorf("documento no encontrado: %v", err)
 	}
 	enlace := asString(firstOf(doc, "enlace_gestor_documental", "EnlaceGestorDocumental"))
