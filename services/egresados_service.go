@@ -14,23 +14,16 @@ type ProvisionEgresadoResult struct {
 	EgresadoId          int    `json:"egresado_id"`
 	CodigoInstitucional string `json:"codigo_institucional"`
 	Nombre              string `json:"nombre,omitempty"`
-	// Carrera viene de academica_jbpm (SGA), on-demand — best-effort: si el
-	// servicio falla o no reconoce el código, queda vacío y la UI cae a '—'.
+	// Carrera viene de academica_jbpm on-demand; best-effort (vacío si falla).
 	Carrera string `json:"carrera,omitempty"`
 }
 
-// ProvisionarEgresado hace el JIT provisioning del egresado al primer login
-// (contraparte de ProvisionarEmpresa). Flujo: userinfo(token) → userRol(email) →
-// validar que es egresado (Estado == "E") → terceros_crud (nombre real, C-2a) →
-// alta idempotente de usuario (tipo EGR) + egresado local.
-//
-// SEGURIDAD: email y documento se derivan del token vía OIDC userinfo — un usuario
-// autenticado no puede provisionar el perfil de otra persona. El documento es la
-// llave de identidad del egresado (los egresados SIEMPRE lo traen; verificado
-// 2026-07-01 con clalapea).
-//
-// programa/facultad NO se almacenan (C-2a: on-demand del SGA); fecha_grado queda
-// NULL (no hay fuente institucional, verificado 2026-06-10).
+// ProvisionarEgresado hace el JIT provisioning del egresado al primer login:
+// userinfo(token) → userRol(email) → validar Estado == "E" → terceros_crud (nombre
+// real, C-2a) → alta idempotente de usuario (tipo EGR) + egresado local.
+// Email y documento se derivan del token vía OIDC userinfo: un usuario autenticado
+// no puede provisionar el perfil de otra persona. programa/facultad no se almacenan
+// (C-2a on-demand); fecha_grado queda NULL (sin fuente institucional).
 func ProvisionarEgresado(token string) (*ProvisionEgresadoResult, error) {
 	info, err := GetUserInfoDeToken(token)
 	if err != nil {
@@ -53,7 +46,7 @@ func ProvisionarEgresado(token string) (*ProvisionEgresadoResult, error) {
 		return nil, fmt.Errorf("el token de %s no expone documento; no se puede amarrar la identidad del egresado", info.Email)
 	}
 
-	// Nombre real desde terceros_crud (best effort: si falla, se degrada al email).
+	// Nombre real desde terceros_crud; best-effort, degrada al email.
 	nombre, terceroId := buscarTerceroPorDocumento(token, documento)
 	if nombre == "" {
 		nombre = info.Email
@@ -76,8 +69,7 @@ func ProvisionarEgresado(token string) (*ProvisionEgresadoResult, error) {
 		return nil, err
 	}
 
-	// Best-effort: la carrera es un enriquecimiento de academica_jbpm, nunca debe
-	// tumbar el login si el servicio falla o no reconoce el código.
+	// Best-effort: la carrera nunca debe tumbar el login.
 	carrera, err := ResolverCarrera(token, codigo)
 	if err != nil {
 		carrera = ""
@@ -92,9 +84,8 @@ func ProvisionarEgresado(token string) (*ProvisionEgresadoResult, error) {
 	}, nil
 }
 
-// buscarTerceroPorDocumento resuelve nombre real y TerceroId en terceros_crud
-// (misma consulta que sga_cliente: datos_identificacion?query=Activo:true,Numero:{doc}).
-// Best effort: cualquier fallo devuelve ("", 0) y el caller degrada.
+// buscarTerceroPorDocumento resuelve nombre real y TerceroId en terceros_crud.
+// Best-effort: cualquier fallo devuelve ("", 0) y el caller degrada.
 func buscarTerceroPorDocumento(token, documento string) (nombre string, terceroId int) {
 	var datos []struct {
 		TerceroId struct {
@@ -125,8 +116,7 @@ func buscarTerceroPorDocumento(token, documento string) (nombre string, terceroI
 }
 
 // buscarCodigoInstitucional es el fallback cuando userRol no trae Codigo: consulta
-// sga_mid consultar_persona (C-2a) con el TerceroId. Tolera las dos variantes de
-// respuesta (mismo parseo defensivo que perfil-api.service.ts del frontend).
+// sga_mid consultar_persona (C-2a). Tolera las dos variantes de respuesta.
 func buscarCodigoInstitucional(token string, terceroId int) string {
 	var res map[string]interface{}
 	path := fmt.Sprintf("/derechos_pecuniarios/consultar_persona/%d", terceroId)
@@ -137,8 +127,8 @@ func buscarCodigoInstitucional(token string, terceroId int) string {
 	if data == nil {
 		return ""
 	}
-	// Variante documentada: Data.Codigos[] — se prefiere el código con Activo=false
-	// (condición de egresado, C-2a); si no hay inactivos, el primero con Dato.
+	// Variante Data.Codigos[]: se prefiere el código con Activo=false (condición de
+	// egresado); si no hay inactivos, el primero con Dato.
 	if codigos, ok := data["Codigos"].([]interface{}); ok {
 		var primero string
 		for _, c := range codigos {
@@ -161,12 +151,12 @@ func buscarCodigoInstitucional(token string, terceroId int) string {
 			return primero
 		}
 	}
-	// Variante plana observada (2026-06-10): el código viene en NumeroIdentificacion.
+	// Variante plana: el código viene en NumeroIdentificacion.
 	return strings.TrimSpace(asString(data["NumeroIdentificacion"]))
 }
 
-// findOrCreateUsuarioEgresado busca el usuario por documento (llave institucional del
-// egresado, UNIQUE en BD) o lo crea como tipo EGR (C-7). Idempotente: relogin no duplica.
+// findOrCreateUsuarioEgresado busca el usuario por documento (UNIQUE en BD) o lo
+// crea como tipo EGR. Idempotente.
 func findOrCreateUsuarioEgresado(token, documento, sub, email, nombre string) (int, error) {
 	var existentes []map[string]interface{}
 	q := fmt.Sprintf("/usuario?query=Documento:%s,Activo:true&limit=1", url.QueryEscape(documento))
@@ -199,8 +189,8 @@ func findOrCreateUsuarioEgresado(token, documento, sub, email, nombre string) (i
 	return id, nil
 }
 
-// findOrCreateEgresado busca el perfil de egresado por usuario (UNIQUE usuario_id) o lo
-// crea con el código institucional. Idempotente. Devuelve el id local (egresado_id).
+// findOrCreateEgresado busca el perfil de egresado por usuario (UNIQUE usuario_id)
+// o lo crea con el código institucional. Idempotente.
 func findOrCreateEgresado(token string, usuarioId int, codigo string) (int, error) {
 	var existentes []map[string]interface{}
 	q := fmt.Sprintf("/egresado?query=Usuario.Id:%d,Activo:true&limit=1", usuarioId)

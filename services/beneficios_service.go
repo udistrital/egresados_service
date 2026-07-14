@@ -9,19 +9,15 @@ import (
 	"github.com/udistrital/egresados_service/helpers"
 )
 
-// GetCatalogoBeneficios devuelve el catálogo paginado con filtros (RN-008, RN-FILTROS).
-// Solo beneficios con estado=PUBLICADO y fecha_fin >= hoy. Los AGOTADOS
-// (cupos_disponibles = 0) SÍ se listan: la UI los muestra deshabilitados ("Sin
-// cupos") y ofrece el toggle "sólo con cupos"; ocultarlos del todo daba la
-// impresión de que el beneficio nunca existió.
+// GetCatalogoBeneficios devuelve el catálogo paginado con filtros (RN-008): solo
+// beneficios PUBLICADOS con fecha_fin >= hoy. Los agotados sí se listan; la UI los
+// muestra deshabilitados.
 func GetCatalogoBeneficios(token string, page, limit, categoriaId, empresaId int, q string) (interface{}, error) {
-	// El estado ya no es FK local: se filtra por el id del parámetro PUBLICADO (C-1)
 	publicadoId, err := ResolverParametroId(token, TipoParamEstadoBeneficio, "PUBLICADO")
 	if err != nil {
 		return nil, err
 	}
 
-	// Construir query string para el CRUD
 	offset := (page - 1) * limit
 	filtros := fmt.Sprintf("EstadoBeneficioId:%d,Activo:true", publicadoId)
 	if categoriaId > 0 {
@@ -33,7 +29,6 @@ func GetCatalogoBeneficios(token string, page, limit, categoriaId, empresaId int
 	if q != "" {
 		filtros += ",Titulo__icontains:" + url.QueryEscape(q)
 	}
-	// fecha_fin >= hoy (RN-008): operador nativo del ORM
 	filtros += ",FechaFin__gte:" + time.Now().Format("2006-01-02")
 	query := fmt.Sprintf("/beneficio?query=%s&limit=%d&offset=%d", filtros, limit, offset)
 
@@ -44,21 +39,18 @@ func GetCatalogoBeneficios(token string, page, limit, categoriaId, empresaId int
 	return result, nil
 }
 
-// GetBeneficioDetalle devuelve el detalle de un beneficio por id, con el total
-// histórico de solicitudes ("N egresados ya lo solicitaron", social proof del detalle)
-// y los documentos que la empresa exige para postularse.
+// GetBeneficioDetalle devuelve el detalle de un beneficio con el total histórico de
+// solicitudes y los documentos requeridos (ambos best-effort).
 func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 	var result map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/beneficio/%d", id), &result); err != nil {
 		return nil, err
 	}
-	// Best-effort: si el conteo falla, el detalle sale sin él.
 	var solicitudes []map[string]interface{}
 	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", id)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err == nil {
 		result["total_solicitudes"] = len(solicitudes)
 	}
-	// Best-effort: si el gestor de documentos requeridos falla, el detalle sale sin ellos.
 	if documentos, err := GetDocumentosRequeridos(token, id); err == nil {
 		result["documentos_requeridos"] = documentos
 	}
@@ -66,9 +58,7 @@ func GetBeneficioDetalle(token string, id int) (interface{}, error) {
 }
 
 // GetDocumentosRequeridos lista los documentos que la empresa exige para postularse
-// a un beneficio (definidos al publicar, RF-005/documentos). Usado tanto por el
-// detalle del catálogo (egresado, antes de postularse) como por el merge de
-// GetDocumentosDeSolicitud (egresado/empresa, después de postularse).
+// a un beneficio (RF-005).
 func GetDocumentosRequeridos(token string, beneficioId int) ([]map[string]interface{}, error) {
 	var documentos []map[string]interface{}
 	q := fmt.Sprintf("/documento-requerido-beneficio?query=Beneficio.Id:%d,Activo:true&limit=0", beneficioId)
@@ -78,12 +68,9 @@ func GetDocumentosRequeridos(token string, beneficioId int) ([]map[string]interf
 	return documentos, nil
 }
 
-// GetBeneficiosDeEmpresa lista TODOS los beneficios de una empresa — es la vista
-// de gestión del DUEÑO, así que incluye borradores, agotados, vencidos y retirados
-// (a diferencia del catálogo público). Cada ítem lleva el código de su estado y
-// las métricas de solicitudes: recibidas (histórico) y pendientes de acción de la
-// empresa (estado vigente PENDIENTE o EN_REVISION).
-// N+1 de getEstadoActual (C-4b), mismo caveat que RN-007/010.
+// GetBeneficiosDeEmpresa lista todos los beneficios de una empresa (vista de gestión
+// del dueño: incluye borradores, vencidos y retirados) con el código de estado y las
+// métricas de solicitudes recibidas y pendientes.
 func GetBeneficiosDeEmpresa(token string, empresaId int) (interface{}, error) {
 	var beneficios []map[string]interface{}
 	q := fmt.Sprintf("/beneficio?query=Empresa.Id:%d,Activo:true&limit=0", empresaId)
@@ -97,7 +84,7 @@ func GetBeneficiosDeEmpresa(token string, empresaId int) (interface{}, error) {
 		var sols []map[string]interface{}
 		qs := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", toInt(b["id"]))
 		if err := helpers.GetCRUD(token, qs, &sols); err != nil {
-			continue // best effort: la card sale sin métricas
+			continue
 		}
 		b["total_solicitudes"] = len(sols)
 		pendientes := 0
@@ -115,7 +102,6 @@ func GetBeneficiosDeEmpresa(token string, empresaId int) (interface{}, error) {
 // PublicarBeneficio valida RN-008b y crea el beneficio en el CRUD.
 // Solo permite publicar si la empresa está en estado ACTIVA.
 func PublicarBeneficio(token string, empresaId int, body map[string]interface{}) (interface{}, error) {
-	// RN-008b: validar campos obligatorios
 	required := []string{"titulo", "descripcion", "condiciones", "categoria_beneficio_id", "fecha_inicio", "fecha_fin", "cupos_total"}
 	for _, field := range required {
 		if v, ok := body[field]; !ok || v == nil || v == "" {
@@ -123,7 +109,6 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 		}
 	}
 
-	// Verificar que la empresa esté ACTIVA (estado_empresa_id → parámetro)
 	var empresa map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/empresa/%d", empresaId), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa no encontrada")
@@ -136,14 +121,13 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 		return nil, fmt.Errorf("la empresa debe estar ACTIVA para publicar beneficios")
 	}
 
-	// Resolver id del estado PUBLICADO (servicio de parámetros, C-1)
 	estadoId, err := ResolverParametroId(token, TipoParamEstadoBeneficio, "PUBLICADO")
 	if err != nil {
 		return nil, err
 	}
 
-	// empresa y usuario_creador siguen siendo relaciones del CRUD (formato objeto);
-	// categoría y estado son ids de parámetro planos
+	// empresa y usuario_creador son relaciones del CRUD (formato objeto);
+	// categoría y estado son ids de parámetro planos.
 	body["empresa"] = map[string]interface{}{"id": empresaId}
 	delete(body, "empresa_id")
 	body["estado_beneficio_id"] = estadoId
@@ -159,13 +143,10 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 		}
 	}
 
-	// El beneficio nace PUBLICADO → fecha_publicacion es ahora (el cliente no la manda)
 	body["fecha_publicacion"] = time.Now().UTC().Format(time.RFC3339)
-
-	// cupos_disponibles = cupos_total al publicar
 	body["cupos_disponibles"] = body["cupos_total"]
 
-	// documentos_requeridos (opcional): se crean aparte, no son columnas de beneficio.
+	// documentos_requeridos se crean aparte, no son columnas de beneficio.
 	documentosRequeridos, _ := body["documentos_requeridos"].([]interface{})
 	delete(body, "documentos_requeridos")
 
@@ -183,7 +164,7 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 			}
 			nombre, _ := doc["nombre"].(string)
 			if strings.TrimSpace(nombre) == "" {
-				continue // fila vacía del formulario: se ignora, no es un error
+				continue
 			}
 			descripcion, _ := doc["descripcion"].(string)
 			payload := map[string]interface{}{
@@ -193,9 +174,6 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 			}
 			var docResult interface{}
 			if err := helpers.PostCRUD(token, "/documento-requerido-beneficio", payload, &docResult); err != nil {
-				// El beneficio YA se creó; un documento requerido que falla no debe
-				// revertirlo (no hay cupo ni radicado en juego aquí). Se reporta el
-				// error para que la empresa sepa que ese documento no quedó registrado.
 				return nil, fmt.Errorf("beneficio creado pero no se pudo registrar el documento requerido %q: %v", nombre, err)
 			}
 		}
@@ -204,10 +182,9 @@ func PublicarBeneficio(token string, empresaId int, body map[string]interface{})
 	return result, nil
 }
 
-// EditarBeneficio edita el CONTENIDO de un beneficio (RF-005). Regla: solo BORRADOR,
-// o PUBLICADO sin solicitudes en curso — editar condiciones con postulaciones activas
-// sería cambiar las reglas a mitad de camino. El estado NO se cambia por aquí
-// (retirar tiene endpoint propio) y empresa/usuario_creador no cambian de dueño.
+// EditarBeneficio edita el contenido de un beneficio (RF-005): solo en BORRADOR, o
+// PUBLICADO sin solicitudes en curso. El estado no se cambia por aquí (retirar tiene
+// endpoint propio) y empresa/usuario_creador no cambian de dueño.
 func EditarBeneficio(token string, id int, body map[string]interface{}) error {
 	ben, err := getBeneficioBase(token, id)
 	if err != nil {
@@ -218,8 +195,7 @@ func EditarBeneficio(token string, id int, body map[string]interface{}) error {
 		return err
 	}
 	switch estado {
-	case "BORRADOR":
-		// editable siempre
+	case "BORRADOR": // editable siempre
 	case "PUBLICADO":
 		activas, err := beneficioTieneSolicitudesActivas(token, id)
 		if err != nil {
@@ -233,21 +209,19 @@ func EditarBeneficio(token string, id int, body map[string]interface{}) error {
 	}
 
 	// Whitelist de campos editables sobre el objeto completo (el PUT del CRUD
-	// escribe todas las columnas; ver getBeneficioBase).
+	// escribe todas las columnas).
 	cuposAntes := toInt(ben["cupos_total"])
 	for _, campo := range []string{"titulo", "descripcion", "condiciones", "categoria_beneficio_id", "fecha_inicio", "fecha_fin", "cupos_total", "imagen_url"} {
 		if v, ok := body[campo]; ok && v != nil && v != "" {
 			ben[campo] = v
 		}
 	}
-	// Normalizar fechas: "2026-06-01" → "2026-06-01T00:00:00Z" (mismo idioma que publicar)
 	for _, campo := range []string{"fecha_inicio", "fecha_fin"} {
 		if v, ok := ben[campo].(string); ok && !strings.Contains(v, "T") {
 			ben[campo] = v + "T00:00:00Z"
 		}
 	}
-	// Si cambia el total de cupos, los disponibles se mueven con el mismo delta
-	// (lo ya consumido se respeta); nunca por debajo de 0.
+	// Si cambia el total de cupos, los disponibles se mueven con el mismo delta.
 	if delta := toInt(ben["cupos_total"]) - cuposAntes; delta != 0 {
 		disponibles := toInt(ben["cupos_disponibles"]) + delta
 		if disponibles < 0 {
@@ -258,11 +232,9 @@ func EditarBeneficio(token string, id int, body map[string]interface{}) error {
 	return helpers.PutCRUD(token, fmt.Sprintf("/beneficio/%d", id), ben)
 }
 
-// RetirarBeneficio pasa el beneficio a RETIRADO (el "cerrar" de la empresa): sale del
-// catálogo y no acepta nuevas solicitudes. Se permite desde cualquier estado no
-// retirado. Las solicitudes EN CURSO no se tocan (la empresa las sigue respondiendo
-// desde la bandeja) y los cupos no se devuelven: el beneficio deja de ser solicitable,
-// así que no hay carrera por ellos.
+// RetirarBeneficio pasa el beneficio a RETIRADO: sale del catálogo y no acepta
+// nuevas solicitudes. Las solicitudes en curso no se tocan y los cupos no se
+// devuelven.
 func RetirarBeneficio(token string, id int) error {
 	ben, err := getBeneficioBase(token, id)
 	if err != nil {
@@ -294,9 +266,8 @@ func getBeneficioBase(token string, id int) (map[string]interface{}, error) {
 	return ben, nil
 }
 
-// beneficioTieneSolicitudesActivas indica si el beneficio tiene solicitudes con estado
-// vigente NO terminal (PENDIENTE/EN_REVISION/REQUIERE_INFO). N+1 de getEstadoActual,
-// mismo caveat que RN-007/010.
+// beneficioTieneSolicitudesActivas indica si el beneficio tiene solicitudes con
+// estado vigente no terminal.
 func beneficioTieneSolicitudesActivas(token string, beneficioId int) (bool, error) {
 	var solicitudes []map[string]interface{}
 	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Id:%d,Activo:true&fields=Id&limit=0", beneficioId)
@@ -306,7 +277,7 @@ func beneficioTieneSolicitudesActivas(token string, beneficioId int) (bool, erro
 	for _, s := range solicitudes {
 		codigo, _, err := getEstadoActual(token, toInt(firstOf(s, "id", "Id")))
 		if err != nil {
-			continue // sin historial legible: no bloquea la edición
+			continue
 		}
 		if codigo == estadoPendiente || codigo == estadoEnRevision || codigo == estadoRequiereInfo {
 			return true, nil

@@ -16,10 +16,8 @@ func relId(m map[string]interface{}, key string) int {
 	return toInt(firstOf(rel, "id", "Id"))
 }
 
-// GetDocumentosDeSolicitud arma la vista combinada de documentos requeridos vs.
-// subidos de una solicitud: por cada documento_requerido_beneficio del beneficio
-// de la solicitud, indica si ya se subió (y con qué datos). Sirve igual para el
-// egresado (qué le falta subir) y para la empresa (qué subió, para revisar/comentar).
+// GetDocumentosDeSolicitud arma la vista de documentos requeridos vs. subidos de
+// una solicitud: por cada documento requerido indica si ya se subió y con qué datos.
 func GetDocumentosDeSolicitud(token string, solicitudId int) ([]map[string]interface{}, error) {
 	beneficioId, err := getBeneficioIdDeSolicitud(token, solicitudId)
 	if err != nil {
@@ -70,8 +68,8 @@ func getDocumentosSubidos(token string, solicitudId int) ([]map[string]interface
 	return subidos, nil
 }
 
-// puedeGestionarDocumentos permite subir/reemplazar/eliminar documentos mientras
-// la solicitud sigue en curso — mismo criterio de estado que CancelarSolicitud (RN-005).
+// puedeGestionarDocumentos permite subir/reemplazar/eliminar documentos solo
+// mientras la solicitud sigue en curso (RN-005).
 func puedeGestionarDocumentos(token string, solicitudId int) error {
 	estado, _, err := getEstadoActual(token, solicitudId)
 	if err != nil {
@@ -83,9 +81,8 @@ func puedeGestionarDocumentos(token string, solicitudId int) error {
 	return nil
 }
 
-// SubirDocumentoSolicitud sube (o reemplaza, si ya había uno) el PDF que cumple un
-// documento requerido de una solicitud. IdTipoDocumento=167 (fijo) vía
-// SubirDocumentoGestor. body: { documento_requerido_id, nombre_archivo, file (base64) }.
+// SubirDocumentoSolicitud sube (o reemplaza) el PDF que cumple un documento
+// requerido de una solicitud. body: { documento_requerido_id, nombre_archivo, file }.
 func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]interface{}) (interface{}, error) {
 	documentoRequeridoId := toInt(body["documento_requerido_id"])
 	nombreArchivo, _ := body["nombre_archivo"].(string)
@@ -116,14 +113,12 @@ func SubirDocumentoSolicitud(token string, solicitudId int, body map[string]inte
 	}
 
 	if existente != nil {
-		// Reemplazo: se intenta borrar el archivo anterior en el gestor documental
-		// (best-effort, igual criterio que devolverCupo — no bloquea el reemplazo si falla).
+		// Reemplazo: borrar el archivo anterior en el gestor documental (best-effort).
 		enlaceAnterior := asString(firstOf(existente, "enlace_gestor_documental", "EnlaceGestorDocumental"))
 		_ = EliminarDocumentoGestor(token, enlaceAnterior)
 
-		// El PUT del CRUD reemplaza la fila ENTERA (o.Update sin lista de columnas):
-		// se parte del row completo con las relaciones normalizadas a {id}, nunca de
-		// un payload parcial (las FK llegarían NULL). Mismo patrón que EditarBeneficio.
+		// El PUT del CRUD reemplaza la fila entera: se parte del row completo con las
+		// relaciones normalizadas a {id}, nunca de un payload parcial.
 		docId := toInt(firstOf(existente, "id", "Id"))
 		doc := documentoParaPut(existente)
 		doc["nombre_archivo"] = nombreArchivo
@@ -165,10 +160,8 @@ func EliminarDocumentoSolicitud(token string, solicitudId, documentoSolicitudId 
 }
 
 // ComentarDocumento registra (o reemplaza) la observación de la empresa sobre un
-// documento subido por el egresado. Campo único: no lleva historial de comentarios.
-// El PUT del CRUD reemplaza la fila entera, así que se lee el documento completo
-// y se sobreescriben solo los campos del comentario (un payload parcial dejaba la
-// FK solicitud_beneficio en NULL — hallazgo de la suite Karate, 2026-07-09).
+// documento subido. Se lee el documento completo y se sobreescriben solo los campos
+// del comentario: un payload parcial dejaría la FK solicitud_beneficio en NULL.
 func ComentarDocumento(token string, documentoSolicitudId int, comentario string) error {
 	if comentario == "" {
 		return fmt.Errorf("el comentario no puede estar vacío")
@@ -200,7 +193,7 @@ func documentoParaPut(doc map[string]interface{}) map[string]interface{} {
 }
 
 // GetArchivoDocumento devuelve el nombre y el contenido en base64 de un documento
-// subido, para que el cliente lo abra/descargue sin llamar directo al gestor documental.
+// subido.
 func GetArchivoDocumento(token string, documentoSolicitudId int) (map[string]interface{}, error) {
 	var doc map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/documento-solicitud/%d", documentoSolicitudId), &doc); err != nil {
@@ -217,9 +210,8 @@ func GetArchivoDocumento(token string, documentoSolicitudId int) (map[string]int
 	}, nil
 }
 
-// GetComprobanteSolicitud devuelve el comprobante (opcional) que la empresa adjuntó
-// al aprobar la solicitud. tiene_comprobante=false (sin file/nombre_archivo) es el
-// caso normal cuando la empresa no adjuntó nada — no es un error.
+// GetComprobanteSolicitud devuelve el comprobante opcional que la empresa adjuntó
+// al aprobar; tiene_comprobante=false cuando no adjuntó nada (no es error).
 func GetComprobanteSolicitud(token string, solicitudId int) (map[string]interface{}, error) {
 	nombreArchivo, enlace, err := getComprobanteDeSolicitud(token, solicitudId)
 	if err != nil {

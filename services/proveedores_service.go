@@ -8,15 +8,10 @@ import (
 	"github.com/udistrital/egresados_service/helpers"
 )
 
-// ProveedorAgora es la proyección MÍNIMA de un registro de informacion_proveedor
-// (administrativa_amazon_api). Deliberadamente NO declara los campos sensibles del
-// servicio (NumCuentaBancaria, IdEntidadBancaria, TipoCuentaBancaria, Anexorut,
-// Anexorup, datos del asesor): al no estar en el struct, encoding/json los DESCARTA
-// al deserializar y nunca entran siquiera a la memoria del MID.
-// NumDocumento se conserva porque es interno del MID (amarre JIT token.documento ==
-// NumDocumento); NO se expone al frontend — para eso está ToPublico (RNF-002b).
-// Descripcion/Direccion/Web/FechaRegistro son datos públicos de la empresa (alimentan
-// el "acerca de la empresa" del detalle de beneficio).
+// ProveedorAgora es la proyección mínima de un registro de informacion_proveedor.
+// Deliberadamente no declara los campos sensibles (datos bancarios, anexos): al no
+// estar en el struct, encoding/json los descarta y nunca entran al MID. NumDocumento
+// es interno (amarre JIT); al frontend solo se expone ToPublico (RNF-002b).
 type ProveedorAgora struct {
 	Id            int    `json:"Id"`
 	Tipopersona   string `json:"Tipopersona"`  // NATURAL | JURIDICA
@@ -29,8 +24,8 @@ type ProveedorAgora struct {
 	FechaRegistro string `json:"FechaRegistro"` // "2025-01-15 - 05:04:37 PM"
 }
 
-// ProveedorPublico es lo ÚNICO que el MID puede devolver al frontend sobre una empresa
-// (RNF-002b / Ley 1581). Sin documento, sin datos bancarios, sin anexos.
+// ProveedorPublico es lo único que el MID devuelve al frontend sobre una empresa
+// (RNF-002b / Ley 1581): sin documento, datos bancarios ni anexos.
 type ProveedorPublico struct {
 	AgoraIdExterno int    `json:"agora_id_externo"` // = ProveedorAgora.Id
 	RazonSocial    string `json:"razon_social"`     // = NomProveedor
@@ -49,15 +44,12 @@ func (p *ProveedorAgora) ToPublico() ProveedorPublico {
 }
 
 // BuscarProveedoresPorCorreo consulta los proveedores asociados a un correo en
-// administrativa_amazon_api. Devuelve 0..N (un correo puede tener varios proveedores,
-// caso construdenco — de ahí que sea slice y no un único registro).
-// token: Bearer del request entrante (exigido por el gateway).
+// administrativa_amazon_api. Devuelve 0..N: un correo puede tener varios proveedores.
 func BuscarProveedoresPorCorreo(token, correo string) ([]ProveedorAgora, error) {
 	if strings.TrimSpace(correo) == "" {
 		return nil, fmt.Errorf("correo es requerido para buscar proveedor")
 	}
-	// El ':' del DSL de query va literal (forma verificada con 200 el 2026-07-01);
-	// solo se escapa el valor (el correo) para no romper con caracteres especiales.
+	// El ':' del DSL de query va literal; solo se escapa el valor.
 	q := "correo:" + url.QueryEscape(correo)
 	var proveedores []ProveedorAgora
 	if err := helpers.GetAmazon(token, fmt.Sprintf("/informacion_proveedor?query=%s", q), &proveedores); err != nil {
@@ -66,10 +58,9 @@ func BuscarProveedoresPorCorreo(token, correo string) ([]ProveedorAgora, error) 
 	return proveedores, nil
 }
 
-// BuscarProveedorPorId consulta un proveedor por su id de Ágora (empresa.agora_id_externo).
-// Devuelve nil (sin error) si no existe. La clave de query en minúscula sigue el patrón
-// verificado con `correo:` (2026-07-01); la variante por id no se ha probado con token
-// vivo — los callers deben degradar con gracia si falla.
+// BuscarProveedorPorId consulta un proveedor por su id de Ágora
+// (empresa.agora_id_externo). Devuelve nil sin error si no existe; los callers
+// deben degradar con gracia si falla.
 func BuscarProveedorPorId(token, agoraId string) (*ProveedorAgora, error) {
 	if strings.TrimSpace(agoraId) == "" {
 		return nil, fmt.Errorf("agoraId es requerido para buscar proveedor")
@@ -85,8 +76,7 @@ func BuscarProveedorPorId(token, agoraId string) (*ProveedorAgora, error) {
 	return &proveedores[0], nil
 }
 
-// ProveedoresPublicos mapea una lista de proveedores a su forma pública (para exponer
-// al frontend, p. ej. en el selector de empresa del caso 1:N).
+// ProveedoresPublicos mapea una lista de proveedores a su forma pública.
 func ProveedoresPublicos(proveedores []ProveedorAgora) []ProveedorPublico {
 	out := make([]ProveedorPublico, 0, len(proveedores))
 	for i := range proveedores {

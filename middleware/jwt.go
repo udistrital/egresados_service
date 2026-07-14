@@ -1,17 +1,9 @@
-// Package middleware valida el token ENTRANTE del MID (la dirección opuesta a la
-// propagación del Bearer de helpers/http_client.go).
+// Package middleware valida el token entrante del MID (el gateway valida el Bearer,
+// pero este servicio también se consume directo, así que valida por su cuenta):
+//   - Token JWT (3 segmentos): firma RS256 contra el JWKS de WSO2 + exp/nbf.
+//   - Token opaco: contra el endpoint OIDC userinfo (caché 5 min por token).
 //
-// CONTEXTO (verificado 2026-07-07): utils_oas NO trae validación de JWT —
-// security.SetSecurityHeaders() solo pone headers de respuesta (CSP/HSTS/etc.) y los
-// servicios del SGA confían en que el gateway WSO2 valida el Bearer antes de enrutar.
-// Este MID también se consume directo (localhost / micro-frontend), así que valida por
-// su cuenta:
-//   - Token JWT (3 segmentos): firma RS256 contra el JWKS de WSO2 + exp/nbf. Sin
-//     llamadas remotas por request (el JWKS se cachea).
-//   - Token opaco: se valida contra el endpoint OIDC userinfo (caché 5 min por token).
-//
-// Se desactiva con EGRESADOS_SERVICE_VALIDAR_JWT=false (ValidarJWT en conf/app.conf;
-// solo para desarrollo sin conectividad; NUNCA en producción).
+// Se desactiva con ValidarJWT=false en conf/app.conf (solo desarrollo, nunca en prod).
 package middleware
 
 import (
@@ -34,9 +26,7 @@ import (
 
 var (
 	validarActivo = web.AppConfig.DefaultString("ValidarJWT", "true") != "false"
-	// Sin default quemado: si EGRESADOS_SERVICE_JWKS_URL no está seteada, la
-	// consulta al JWKS falla explícito en vez de pegarle en silencio al WSO2 real.
-	jwksURL = web.AppConfig.DefaultString("Wso2JwksService", "")
+	jwksURL       = web.AppConfig.DefaultString("Wso2JwksService", "")
 )
 
 // ValidarJWTEntrante es el filtro BeforeRouter de todas las rutas /v1/*. Si el token
@@ -46,7 +36,7 @@ func ValidarJWTEntrante(ctx *beectx.Context) {
 		return
 	}
 	if ctx.Input.Method() == http.MethodOptions {
-		return // preflight CORS: lo responde el filtro de CORS, no lleva Authorization
+		return // preflight CORS: no lleva Authorization
 	}
 	auth := ctx.Input.Header("Authorization")
 	crudo := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
@@ -88,8 +78,8 @@ func validarComoJWT(token string) error {
 	if err := json.Unmarshal(headerJSON, &header); err != nil {
 		return fmt.Errorf("header no es JSON válido")
 	}
-	// Solo RS256 (lo que publica el JWKS de WSO2). Rechazar cualquier otro alg cierra
-	// los ataques de confusión de algoritmo (p. ej. none o HS256 firmado con la clave pública).
+	// Solo RS256: rechazar cualquier otro alg cierra los ataques de confusión de
+	// algoritmo (none, HS256 firmado con la clave pública).
 	if header.Alg != "RS256" {
 		return fmt.Errorf("alg %q no soportado (se exige RS256)", header.Alg)
 	}
@@ -214,8 +204,8 @@ var (
 )
 
 // validarOpaco valida un token no-JWT contra el endpoint OIDC userinfo. Un token
-// aceptado se cachea 5 minutos (el userinfo remoto cuesta ~1 RTT por request si no).
-// Los rechazos NO se cachean: un token recién emitido no debe quedar vetado.
+// aceptado se cachea 5 minutos; los rechazos no se cachean (un token recién emitido
+// no debe quedar vetado).
 func validarOpaco(authHeader string) error {
 	opacoMu.Lock()
 	if vence, ok := opacoCache[authHeader]; ok && time.Now().Before(vence) {

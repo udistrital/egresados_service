@@ -8,17 +8,12 @@ import (
 	"github.com/udistrital/egresados_service/helpers"
 )
 
-// IdTipoDocumentoBeneficiosEgresados es el IdTipoDocumento fijo (provisionado en
-// documentos_crud por el gestor documental institucional) para todos los PDFs que
-// se suban desde este módulo. Fijo por instrucción del negocio: NO se resuelve por
-// ambiente ni por tipo de documento requerido.
+// IdTipoDocumentoBeneficiosEgresados es el IdTipoDocumento fijo para todos los
+// PDFs del módulo (instrucción del negocio; no se resuelve por ambiente).
 const IdTipoDocumentoBeneficiosEgresados = 167
 
-// respuestaGestorDocumental formato de POST document/upload del gestor
-// documental institucional: un OBJETO (no un array), con el uid/hash en Nuxeo
-// viajando en res.Enlace. Confirmado contra el servicio real: un array como
-// body de esta respuesta rompe el unmarshal ("cannot unmarshal object into
-// []respuestaGestorDocumental").
+// respuestaGestorDocumental es el formato de POST document/upload: un objeto
+// (no un array), con el uid de Nuxeo en res.Enlace.
 type respuestaGestorDocumental struct {
 	Status string `json:"Status"`
 	Res    struct {
@@ -26,8 +21,7 @@ type respuestaGestorDocumental struct {
 	} `json:"res"`
 }
 
-// esPdfBase64 valida (defensa en profundidad; el cliente ya valida) que el
-// contenido decodificado empiece con la cabecera %PDF.
+// esPdfBase64 valida que el contenido decodificado empiece con la cabecera %PDF.
 func esPdfBase64(fileBase64 string) bool {
 	raw, err := base64.StdEncoding.DecodeString(fileBase64)
 	if err != nil || len(raw) < 4 {
@@ -36,21 +30,17 @@ func esPdfBase64(fileBase64 string) bool {
 	return strings.HasPrefix(string(raw[:4]), "%PDF")
 }
 
-// SubirDocumentoGestor sube un PDF al gestor documental institucional
-// (IdTipoDocumento=167) y devuelve el uid/Enlace del documento en Nuxeo.
-// metadatos SIEMPRE va vacío ({}): el gestor documental respondía 422/timeout
-// cuando el body llevaba metadatos con contenido; la relación con la solicitud
-// y el documento requerido ya vive en nuestra propia tabla documento_solicitud,
-// así que no hace falta duplicarla ahí.
+// SubirDocumentoGestor sube un PDF al gestor documental institucional y devuelve el
+// uid/Enlace del documento en Nuxeo. metadatos siempre va vacío ({}): con contenido
+// el servicio responde 422/timeout; la relación con la solicitud vive en nuestra
+// tabla documento_solicitud.
 func SubirDocumentoGestor(token, nombre, descripcion, fileBase64 string) (string, error) {
 	if !esPdfBase64(fileBase64) {
 		return "", fmt.Errorf("el archivo debe ser un PDF válido")
 	}
 
-	// El "nombre" va sin puntos ni extensión: sga_cliente los elimina antes de
-	// enviarlo (new_nuxeo.service.ts, uploadFiles) porque Nuxeo lo usa como título
-	// del documento. El nombre original con extensión se conserva en nuestra BD
-	// (documento_solicitud.nombre_archivo).
+	// El nombre va sin puntos ni extensión (Nuxeo lo usa como título); el original
+	// con extensión se conserva en documento_solicitud.nombre_archivo.
 	nombre = strings.TrimSuffix(strings.TrimSuffix(nombre, ".pdf"), ".PDF")
 	nombre = strings.ReplaceAll(nombre, ".", "_")
 

@@ -7,9 +7,8 @@ import (
 	"github.com/udistrital/egresados_service/helpers"
 )
 
-// UserRol es la identidad que devuelve autenticacion_mid/token/userRol a partir del
-// email del token. Es la fuente de verdad para saber quién se autenticó y si es
-// egresado o empresa (campo Estado). Verificado contra el servicio real (2026-07-01).
+// UserRol es la identidad que devuelve autenticacion_mid/token/userRol: la fuente de
+// verdad para saber quién se autenticó y si es egresado o empresa (campo Estado).
 type UserRol struct {
 	Role               []string `json:"role"`
 	Documento          string   `json:"documento"`
@@ -20,9 +19,8 @@ type UserRol struct {
 	Estado             string   `json:"Estado"` // "E" = egresado; distinto de E = empresa
 }
 
-// EsEgresado indica si la persona autenticada es egresado (Estado == "E").
-// Regla defensiva (OATI 2026-07-01): egresado SOLO si Estado es exactamente "E";
-// cualquier otro valor (incluido vacío) se trata como empresa.
+// EsEgresado indica si la persona autenticada es egresado. Regla defensiva: egresado
+// solo si Estado es exactamente "E"; cualquier otro valor (incluido vacío) es empresa.
 func (u *UserRol) EsEgresado() bool {
 	return strings.EqualFold(strings.TrimSpace(u.Estado), "E")
 }
@@ -30,9 +28,8 @@ func (u *UserRol) EsEgresado() bool {
 // EsEmpresa es el complemento de EsEgresado.
 func (u *UserRol) EsEmpresa() bool { return !u.EsEgresado() }
 
-// UserInfo es la identidad que devuelve el endpoint OIDC userinfo a partir del token
-// SOLO (sin pasar email). Es la fuente CONFIABLE del email autenticado para el JIT:
-// deriva del token, no de un valor arbitrario del body. Verificado (2026-07-01).
+// UserInfo es la identidad que devuelve el endpoint OIDC userinfo a partir del token:
+// la fuente confiable del email autenticado para el JIT (deriva del token, no del body).
 type UserInfo struct {
 	Sub                string `json:"sub"`
 	Email              string `json:"email"`
@@ -53,7 +50,6 @@ func GetUserInfoDeToken(token string) (*UserInfo, error) {
 }
 
 // GetUserRol consulta la identidad del usuario a partir de su email.
-// token: Bearer del request entrante (exigido por el gateway).
 func GetUserRol(token, email string) (*UserRol, error) {
 	if strings.TrimSpace(email) == "" {
 		return nil, fmt.Errorf("email es requerido para consultar userRol")

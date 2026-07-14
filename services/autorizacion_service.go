@@ -14,11 +14,9 @@ import (
 // detectan con errors.Is y lo traducen a HTTP 403.
 var ErrAccesoDenegado = errors.New("acceso denegado")
 
-// getUsuariosLocalesDeToken resuelve los usuarios LOCALES del dueño del token:
-// userinfo(token) → sub WSO2 → usuario por id_externo. La identidad sale del token
-// (misma regla de seguridad del JIT), nunca de parámetros del request. Puede haber
-// más de una fila (un egresado SGA que además es usuario de empresa AGORA comparte
-// el sub), por eso devuelve todos los ids.
+// getUsuariosLocalesDeToken resuelve los usuarios locales del dueño del token:
+// userinfo(token) → sub WSO2 → usuario por id_externo. La identidad sale del token,
+// nunca de parámetros del request. Puede haber más de una fila por sub compartido.
 func getUsuariosLocalesDeToken(token string) ([]int, error) {
 	info, err := GetUserInfoDeToken(token)
 	if err != nil {
@@ -220,10 +218,9 @@ func VerificarAccesoSolicitudEgresado(token string, solicitudId int) error {
 
 // ── Endpoints bidireccionales ─────────────────────────────────────────────────
 
-// VerificarParticipanteSolicitud exige que el dueño del token sea PARTE de la
-// solicitud: el egresado que la creó O un usuario de la empresa del beneficio
-// (mensajes, documentos, comprobante). Un tercero autenticado no puede leer el hilo
-// ni los PDFs (RNF-002b / Ley 1581).
+// VerificarParticipanteSolicitud exige que el dueño del token sea parte de la
+// solicitud: el egresado que la creó o un usuario de la empresa del beneficio
+// (RNF-002b / Ley 1581).
 func VerificarParticipanteSolicitud(token string, solicitudId int) error {
 	usuarioIds, err := getUsuariosLocalesDeToken(token)
 	if err != nil {

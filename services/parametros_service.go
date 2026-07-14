@@ -8,20 +8,13 @@ import (
 	"github.com/udistrital/egresados_service/helpers"
 )
 
-// parametrosLocal activa un catálogo de parámetros EN MEMORIA para desarrollo local,
-// sin token ni servicio institucional. Se enciende con ParametrosLocal=true en
-// conf/app.conf (env EGRESADOS_SERVICE_PARAMETROS_LOCAL). Los códigos son los de la
-// semilla de db/schema.sql; los ids son locales y estables y DEBEN coincidir con los
-// que se insertan en la BD de desarrollo (empresa.estado_empresa_id, beneficio.*_id, etc.).
+// parametrosLocal activa un catálogo de parámetros en memoria para desarrollo local
+// (ParametrosLocal=true en conf/app.conf), sin token ni servicio institucional.
 var parametrosLocal = web.AppConfig.DefaultString("ParametrosLocal", "false") == "true"
 
-// parametrosSeed espeja los parámetros REALES del servicio institucional (creados el
-// 2026-07-07: area EGR id=32, tipos 174-179). Los ids son los INSTITUCIONALES — la BD
-// de dev se migró a ellos (migration_2026-07-07_ids_parametros_institucionales.sql),
-// así el modo local y el real son intercambiables sin tocar datos.
+// parametrosSeed espeja los parámetros reales del servicio institucional con sus
+// mismos ids, así el modo local y el real son intercambiables.
 var parametrosSeed = map[string][]map[string]interface{}{
-	// Modelo de empresa SIN flujo de aprobación: nace ACTIVA (Ágora ya la verificó) y
-	// solo puede pasar a SUSPENDIDA.
 	TipoParamEstadoEmpresa: {
 		{"Id": 7199, "CodigoAbreviacion": "ACTIVA", "Nombre": "Activa"},
 		{"Id": 7200, "CodigoAbreviacion": "SUSPENDIDA", "Nombre": "Suspendida"},
@@ -49,18 +42,15 @@ var parametrosSeed = map[string][]map[string]interface{}{
 		{"Id": 7216, "CodigoAbreviacion": "DESCUENTOS", "Nombre": "Descuentos"},
 		{"Id": 7217, "CodigoAbreviacion": "OTRO", "Nombre": "Otro"},
 	},
-	// Solo los 3 sectores que existían en la semilla local; el servicio real tiene 10
-	// (7218-7227) — en modo real llegan todos.
+	// Subconjunto local; el servicio real tiene 10 sectores (7218-7227).
 	TipoParamSectorEconomico: {
 		{"Id": 7218, "CodigoAbreviacion": "TEC", "Nombre": "Tecnología e Innovación"},
 		{"Id": 7222, "CodigoAbreviacion": "COM", "Nombre": "Comercio y Retail"},
 		{"Id": 7227, "CodigoAbreviacion": "OTR", "Nombre": "Otro"},
 	},
-	// Códigos ≤20 chars: codigo_abreviacion institucional es varchar(20) — estos son
-	// los códigos REALES creados en el servicio el 2026-07-07 (los largos originales
-	// no cabían). OJO: la tabla institucional NO tiene columna de valor; "Valor" solo
-	// existe en esta semilla local. Contra el servicio real el MID usa sus defaults
-	// (getLimiteActivas → 5) hasta que se acuerde un portador (numero_orden).
+	// Códigos ≤20 chars (codigo_abreviacion institucional es varchar(20)). "Valor"
+	// solo existe en esta semilla: la tabla institucional no tiene columna de valor,
+	// contra el servicio real el MID usa sus defaults.
 	TipoParamParametroSistema: {
 		{"Id": 7228, "CodigoAbreviacion": "LIMITE_SOLIC_ACTIVAS", "Nombre": "Límite solicitudes activas", "Valor": "5"},
 		{"Id": 7229, "CodigoAbreviacion": "PAGINACION_DEFAULT", "Nombre": "Paginación catálogo", "Valor": "20"},
@@ -69,7 +59,6 @@ var parametrosSeed = map[string][]map[string]interface{}{
 }
 
 // Códigos de tipo_parametro del módulo en el servicio institucional de parámetros (C-1).
-// Definidos en db/schema.sql (semilla de parametro.tipo_parametro).
 const (
 	TipoParamTipoUsuario        = "TIPO_USUARIO"
 	TipoParamEstadoEmpresa      = "ESTADO_EMPRESA"
@@ -90,8 +79,7 @@ type respuestaParametros struct {
 }
 
 // GetParametrosPorTipo retorna los parámetros activos de un tipo_parametro
-// identificado por su codigo_abreviacion (p. ej. ESTADO_SOLICITUD).
-// token: Bearer del request entrante, exigido por el gateway institucional.
+// identificado por su codigo_abreviacion.
 func GetParametrosPorTipo(token, codigoTipo string) ([]map[string]interface{}, error) {
 	if parametrosLocal {
 		if seed, ok := parametrosSeed[codigoTipo]; ok {
@@ -111,7 +99,7 @@ func GetParametrosPorTipo(token, codigoTipo string) ([]map[string]interface{}, e
 }
 
 // ResolverParametroId obtiene el id del parámetro con el codigo_abreviacion dado
-// dentro de un tipo_parametro (p. ej. PENDIENTE dentro de ESTADO_SOLICITUD).
+// dentro de un tipo_parametro.
 func ResolverParametroId(token, codigoTipo, codigo string) (int, error) {
 	params, err := GetParametrosPorTipo(token, codigoTipo)
 	if err != nil {

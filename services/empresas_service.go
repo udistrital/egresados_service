@@ -13,9 +13,8 @@ import (
 type EmpresaProvisionada struct {
 	EmpresaId        int `json:"empresa_id"`
 	UsuarioEmpresaId int `json:"usuario_empresa_id"`
-	// Nit va FUERA de ProveedorPublico (que es la whitelist RNF-002b para vistas
-	// públicas, p. ej. PerfilEmpresa) porque esta respuesta es la identidad propia
-	// de la empresa autenticada, no una vista de un tercero — aquí sí debe verse.
+	// Nit va fuera de ProveedorPublico: esta respuesta es la identidad propia de la
+	// empresa autenticada, no una vista pública de un tercero (RNF-002b).
 	Nit       string           `json:"nit"`
 	Proveedor ProveedorPublico `json:"proveedor"`
 }
@@ -26,15 +25,11 @@ type ProvisionResult struct {
 	Empresas  []EmpresaProvisionada `json:"empresas"`
 }
 
-// ProvisionarEmpresa hace el JIT provisioning de un usuario de empresa al primer login.
-// Flujo (C-2b/c): userinfo(token) → userRol(email) → validar que es empresa →
-// informacion_proveedor por correo → amarre de identidad → alta idempotente de
-// usuario/empresa/usuario-empresa.
-//
-// SEGURIDAD: el email se deriva del token vía OIDC userinfo (GetUserInfoDeToken), NO
-// del body — así un usuario autenticado no puede provisionar la empresa de otro correo.
-// El amarre token.documento == NumDocumento (persona NATURAL) añade una segunda barrera;
-// un proveedor JURIDICA se valida por coincidencia de correo + aprobación del ciclo de vida.
+// ProvisionarEmpresa hace el JIT provisioning de un usuario de empresa al primer
+// login (C-2b/c): userinfo(token) → userRol(email) → informacion_proveedor por
+// correo → amarre de identidad → alta idempotente de usuario/empresa/usuario-empresa.
+// El email se deriva del token vía OIDC userinfo, nunca del body: un usuario
+// autenticado no puede provisionar la empresa de otro correo.
 func ProvisionarEmpresa(token string) (*ProvisionResult, error) {
 	info, err := GetUserInfoDeToken(token)
 	if err != nil {
@@ -44,7 +39,7 @@ func ProvisionarEmpresa(token string) (*ProvisionResult, error) {
 
 	identidad, err := GetUserRol(token, email)
 	if err != nil {
-		return nil, err // incluye el 400 "Usuario no registrado" (aún no está en WSO2)
+		return nil, err
 	}
 	if identidad.EsEgresado() {
 		return nil, fmt.Errorf("el usuario %s es egresado, no una empresa", email)
@@ -67,12 +62,8 @@ func ProvisionarEmpresa(token string) (*ProvisionResult, error) {
 	var rechazos []string
 	for i := range proveedores {
 		p := &proveedores[i]
-		// Amarre de identidad: SOLO aplicable si tenemos el documento del usuario. Los
-		// usuarios de empresa self-signup NO traen documento (verificado 2026-07-01:
-		// userinfo y userRol lo devuelven vacío), así que la barrera real es la
-		// coincidencia de correo (garantizada por la query) + aprobación del ciclo de
-		// vida. Cuando SÍ haya documento (p. ej. futuro), se exige que coincida en
-		// proveedores NATURAL.
+		// Amarre de identidad solo si el token trae documento (los self-signup no lo
+		// tienen); en ese caso la barrera es la coincidencia de correo de la query.
 		if identidad.Documento != "" && strings.EqualFold(p.Tipopersona, "NATURAL") && p.NumDocumento != identidad.Documento {
 			rechazos = append(rechazos, fmt.Sprintf("proveedor %d: el documento no coincide con el del usuario autenticado", p.Id))
 			continue
@@ -96,8 +87,7 @@ func ProvisionarEmpresa(token string) (*ProvisionResult, error) {
 }
 
 // findOrCreateUsuario busca el usuario de empresa por (sistema_origen, id_externo=sub)
-// —los usuarios self-signup no tienen documento— o lo crea como tipo EMP (C-7) con
-// documento NULL. Idempotente. Devuelve el id local.
+// o lo crea como tipo EMP con documento NULL. Idempotente.
 func findOrCreateUsuario(token, sub, email string) (int, error) {
 	if strings.TrimSpace(sub) == "" {
 		return 0, fmt.Errorf("el token no expone 'sub' (identificador WSO2) para el JIT")
@@ -114,9 +104,9 @@ func findOrCreateUsuario(token, sub, email string) (int, error) {
 		}
 		return toInt(firstOf(u, "id", "Id")), nil
 	}
-	// documento se OMITE a propósito → NULL en BD (la empresa self-signup no tiene cédula).
+	// documento se omite a propósito → NULL en BD (el self-signup no tiene cédula).
 	nuevo := map[string]interface{}{
-		"nombre":         email, // userRol de empresa no trae nombre de persona
+		"nombre":         email,
 		"correo":         email,
 		"tipo_usuario":   "EMP",
 		"id_externo":     sub,
@@ -129,27 +119,20 @@ func findOrCreateUsuario(token, sub, email string) (int, error) {
 	return toInt(firstOf(creado, "id", "Id")), nil
 }
 
-// findOrCreateEmpresa busca la empresa local por agora_id_externo (idempotente) o la
-// crea en estado ACTIVA — la empresa nace operativa porque Ágora ya la verificó; el
-// módulo no tiene flujo de aprobación en el login (solo ACTIVA ↔ SUSPENDIDA, decisión
-// 2026-07-07 alineada con los parámetros institucionales creados). Devuelve el id local.
+// findOrCreateEmpresa busca la empresa local por agora_id_externo o la crea en
+// estado ACTIVA (Ágora ya la verificó; no hay flujo de aprobación en el login).
 func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 	agoraId := strconv.Itoa(p.Id)
-	// OJO: uq_nit_empresa es UNIQUE(nit) sin condición sobre activo (schema.sql), así
-	// que una fila soft-deleted (activo=false, p. ej. tras un DELETE manual en el CRUD)
-	// sigue "ocupando" el NIT para siempre. Por eso estas búsquedas NO filtran
-	// Activo:true: deben encontrar también filas inactivas para reactivarlas en vez de
-	// chocar con la restricción al intentar re-insertar.
+	// Sin filtro Activo:true: uq_nit_empresa no condiciona sobre activo, así que una
+	// fila soft-deleted debe encontrarse y reactivarse en vez de chocar al re-insertar.
 	var existentes []map[string]interface{}
 	q := fmt.Sprintf("/empresa?query=AgoraIdExterno:%s&limit=1", url.QueryEscape(agoraId))
 	if err := helpers.GetCRUD(token, q, &existentes); err != nil {
 		return 0, err
 	}
 	if len(existentes) == 0 {
-		// Fallback por NIT (la restricción real en BD): la empresa puede existir ya con
-		// otro agora_id_externo, o sin ninguno (p. ej. datos de seed) — buscarla por NIT
-		// evita el 500 por llave duplicada en cada login/recarga en vez de bloquear al
-		// usuario.
+		// Fallback por NIT (la restricción real en BD): la empresa puede existir con
+		// otro agora_id_externo o sin ninguno.
 		q = fmt.Sprintf("/empresa?query=Nit:%s&limit=1", url.QueryEscape(p.NumDocumento))
 		if err := helpers.GetCRUD(token, q, &existentes); err != nil {
 			return 0, err
@@ -176,14 +159,10 @@ func findOrCreateEmpresa(token string, p *ProveedorAgora) (int, error) {
 	return toInt(firstOf(creada, "id", "Id")), nil
 }
 
-// actualizarEmpresaDeAgora sincroniza sobre una empresa local ya existente los datos
-// que llegan de Ágora en cada login (razón social, correo, agora_id_externo) y la
-// reactiva si estaba soft-deleted (activo=false); solo hace PUT si algo realmente
-// cambió, para no golpear el CRUD en el camino común (la gran mayoría de logins no
-// traen cambios). Parte del row completo devuelto por la búsqueda —no de un payload
-// parcial— porque el PUT del CRUD reemplaza la fila entera (o.Update sin lista de
-// columnas). NO toca estado_empresa_id: el ciclo de vida local (ACTIVA/SUSPENDIDA) lo
-// decide el módulo, no debe revertirse solo porque el usuario volvió a iniciar sesión.
+// actualizarEmpresaDeAgora sincroniza los datos de Ágora sobre la empresa local y la
+// reactiva si estaba soft-deleted; solo hace PUT si algo cambió. Parte del row
+// completo porque el PUT del CRUD reemplaza la fila entera. No toca
+// estado_empresa_id: el ciclo de vida local lo decide el módulo, no el login.
 func actualizarEmpresaDeAgora(token string, existente map[string]interface{}, p *ProveedorAgora, agoraId string) (int, error) {
 	id := toInt(firstOf(existente, "id", "Id"))
 	cambio := false
@@ -235,8 +214,8 @@ func findOrCreateUsuarioEmpresa(token string, usuarioId, empresaId int, principa
 	return toInt(firstOf(creado, "id", "Id")), nil
 }
 
-// EmpresaDeUsuario es cada empresa a la que un usuario tiene acceso (para el selector
-// de empresa del frontend, caso 1:N). Sin datos sensibles (RNF-002b).
+// EmpresaDeUsuario es cada empresa a la que un usuario tiene acceso (selector
+// multiempresa del frontend). Sin datos sensibles (RNF-002b).
 type EmpresaDeUsuario struct {
 	EmpresaId        int    `json:"empresa_id"`
 	UsuarioEmpresaId int    `json:"usuario_empresa_id"`
@@ -247,8 +226,7 @@ type EmpresaDeUsuario struct {
 	Cargo            string `json:"cargo,omitempty"`
 }
 
-// GetEmpresasDeUsuario lista las empresas vinculadas a un usuario (paso 5, selector
-// multiempresa). Lee usuario_empresa (con la empresa anidada vía RelatedSel) y proyecta.
+// GetEmpresasDeUsuario lista las empresas vinculadas a un usuario.
 func GetEmpresasDeUsuario(token string, usuarioId int) ([]EmpresaDeUsuario, error) {
 	var vinculos []map[string]interface{}
 	q := fmt.Sprintf("/usuario-empresa?query=Usuario.Id:%d,Activo:true&limit=0", usuarioId)
@@ -259,7 +237,7 @@ func GetEmpresasDeUsuario(token string, usuarioId int) ([]EmpresaDeUsuario, erro
 	for _, v := range vinculos {
 		emp, _ := v["empresa"].(map[string]interface{})
 		if emp == nil {
-			continue // vínculo sin empresa cargada: se omite en vez de exponer basura
+			continue
 		}
 		out = append(out, EmpresaDeUsuario{
 			EmpresaId:        toInt(firstOf(emp, "id", "Id")),
@@ -274,9 +252,8 @@ func GetEmpresasDeUsuario(token string, usuarioId int) ([]EmpresaDeUsuario, erro
 	return out, nil
 }
 
-// PerfilEmpresa es el perfil público de una empresa para el frontend (sección
-// "acerca de la empresa" del detalle de beneficio). Whitelist RNF-002b: datos de
-// contacto públicos + métricas de actividad; nunca NIT/documento ni datos bancarios.
+// PerfilEmpresa es el perfil público de una empresa. Whitelist RNF-002b: datos de
+// contacto públicos + métricas; nunca NIT/documento ni datos bancarios.
 type PerfilEmpresa struct {
 	EmpresaId       int    `json:"empresa_id"`
 	RazonSocial     string `json:"razon_social"`
@@ -286,16 +263,14 @@ type PerfilEmpresa struct {
 	Telefono        string `json:"telefono,omitempty"`
 	Direccion       string `json:"direccion,omitempty"`
 	Descripcion     string `json:"descripcion,omitempty"`
-	// AliadoDesde: fecha de registro como proveedor UD en Ágora (solo la fecha).
-	AliadoDesde string `json:"aliado_desde,omitempty"`
-	// Métricas de actividad en el módulo
-	BeneficiosPublicados int `json:"beneficios_publicados"`
-	BeneficiosEntregados int `json:"beneficios_entregados"` // solicitudes APROBADAS
+	// AliadoDesde: fecha de registro como proveedor UD en Ágora.
+	AliadoDesde          string `json:"aliado_desde,omitempty"`
+	BeneficiosPublicados int    `json:"beneficios_publicados"`
+	BeneficiosEntregados int    `json:"beneficios_entregados"` // solicitudes APROBADAS
 }
 
-// GetPerfilEmpresa arma el perfil público: base local + datos públicos de Ágora
-// on-demand (C-2b: descripción/web/dirección no se almacenan) + métricas. La consulta
-// a Ágora es best-effort: si falla, el perfil sale con lo local.
+// GetPerfilEmpresa arma el perfil público: base local + datos de Ágora on-demand
+// (C-2b) + métricas. La consulta a Ágora es best-effort.
 func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 	var empresa map[string]interface{}
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/empresa/%d", empresaId), &empresa); err != nil {
@@ -311,7 +286,6 @@ func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 		Direccion:       asString(firstOf(empresa, "direccion", "Direccion")),
 	}
 
-	// Enriquecimiento Ágora (best-effort)
 	if agoraId := asString(firstOf(empresa, "agora_id_externo", "AgoraIdExterno")); agoraId != "" {
 		if p, err := BuscarProveedorPorId(token, agoraId); err == nil && p != nil {
 			perfil.Descripcion = p.Descripcion
@@ -328,7 +302,6 @@ func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 		}
 	}
 
-	// Métrica: beneficios PUBLICADOS vigentes de la empresa
 	if publicadoId, err := ResolverParametroId(token, TipoParamEstadoBeneficio, "PUBLICADO"); err == nil {
 		var beneficios []map[string]interface{}
 		q := fmt.Sprintf("/beneficio?query=Empresa.Id:%d,EstadoBeneficioId:%d,Activo:true&fields=Id&limit=0", empresaId, publicadoId)
@@ -337,9 +310,7 @@ func GetPerfilEmpresa(token string, empresaId int) (*PerfilEmpresa, error) {
 		}
 	}
 
-	// Métrica: beneficios entregados = solicitudes con estado vigente APROBADA.
-	// N+1 de getEstadoActual (C-4b), mismo caveat que RN-007/010; optimizable con la
-	// vista v_solicitud_estado_vigente si el volumen crece.
+	// Beneficios entregados = solicitudes con estado vigente APROBADA.
 	var solicitudes []map[string]interface{}
 	q := fmt.Sprintf("/solicitud-beneficio?query=Beneficio.Empresa.Id:%d,Activo:true&fields=Id&limit=0", empresaId)
 	if err := helpers.GetCRUD(token, q, &solicitudes); err == nil {
@@ -361,26 +332,21 @@ func GetBandejaEmpresa(token string, empresaId int) (interface{}, error) {
 		return nil, err
 	}
 
-	// RNF-002b: minimizar datos del egresado — solo exponer campos mínimos
-	// Caché por request (código institucional → carrera): evita repetir la cadena
-	// a academica_jbpm cuando varias solicitudes de la página son del mismo egresado.
+	// Caché por request (código institucional → carrera).
 	carrerasPorCodigo := map[string]string{}
 	var bandeja []map[string]interface{}
 	for _, s := range solicitudes {
 		item := map[string]interface{}{
-			"id":              s["id"],
-			"radicado":        s["radicado"],
-			"fecha_solicitud": s["fecha_solicitud"],
-			// Lo que el egresado escribió al solicitar (texto plano, ver desdeJSONB)
+			"id":                    s["id"],
+			"radicado":              s["radicado"],
+			"fecha_solicitud":       s["fecha_solicitud"],
 			"datos_complementarios": desdeJSONB(s["datos_complementarios"]),
 		}
-		// C-4b: el estado vigente se deriva del historial, no de la solicitud
 		if codigo, estadoId, err := getEstadoActual(token, toInt(s["id"])); err == nil {
 			item["estado_solicitud_id"] = estadoId
 			item["estado_solicitud"] = codigo
 		}
-		// Del egresado solo exponer nombre, código institucional y carrera —
-		// nunca teléfono ni el perfil académico completo.
+		// RNF-002b: del egresado solo nombre, código institucional y carrera.
 		if egresado, ok := s["egresado"].(map[string]interface{}); ok {
 			if usuario, ok := egresado["usuario"].(map[string]interface{}); ok {
 				egresadoOut := map[string]interface{}{
@@ -392,7 +358,7 @@ func GetBandejaEmpresa(token string, empresaId int) (interface{}, error) {
 					if !cacheada {
 						resuelta, err := ResolverCarrera(token, codigo)
 						if err != nil {
-							resuelta = "" // best-effort: sin carrera, el cliente cae al código
+							resuelta = ""
 						}
 						carrerasPorCodigo[codigo] = resuelta
 						carrera = resuelta
@@ -435,7 +401,7 @@ func getEmpresaBase(token string, id int) (map[string]interface{}, error) {
 	if err := helpers.GetCRUD(token, fmt.Sprintf("/empresa/%d", id), &empresa); err != nil {
 		return nil, fmt.Errorf("empresa %d no encontrada", id)
 	}
-	// Normalizar la relación restante a formato {id} para el PUT
+	// Normalizar la relación a formato {id} para el PUT.
 	if ua, ok := empresa["usuario_aprobador"].(map[string]interface{}); ok {
 		empresa["usuario_aprobador"] = map[string]interface{}{"id": toInt(ua["id"])}
 	}

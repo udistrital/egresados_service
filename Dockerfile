@@ -4,6 +4,5 @@ WORKDIR /
 
 COPY main main
 COPY conf/app.conf conf/app.conf
-COPY swagger swagger
 
 ENTRYPOINT ["/main"]
